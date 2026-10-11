@@ -10,7 +10,9 @@
     "dev": "node --watch src/server.js",
     "db:init": "node scripts/init-db.js",
     "db:reset": "node scripts/init-db.js --reset",
-    "segredo:gerar": "node -e \"console.log(require('node:crypto').randomBytes(48).toString('hex'))\""
+    "segredo:gerar": "node -e \"console.log(require('node:crypto').randomBytes(48).toString('hex'))\"",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
   "dependencies": {
     "better-sqlite3": "^12.2.0",
@@ -19,5 +21,10 @@
     "dotenv": "^17.2.0",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0"
   }
 }

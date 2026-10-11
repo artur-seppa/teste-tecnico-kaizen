@@ -314,7 +314,35 @@ alguém colá-lo no próprio `.env` para voltar ao ponto de partida. Ver seção
 
 **Inconsistência na documentação.** O README chama a variável de `SIAC_URL`; o
 código e o `.env.example` usam `ERP_URL`. Não alterei o README por ser o
-enunciado do teste.
+enunciado do teste — registrei a diferença no próprio `.env.example`, junto com
+a indicação de que URL e token são credenciais e devem ser pedidas ao time do
+SIAC. Isso fechou a lacuna que a correção do Problema 1 abriu: ao tirar os
+valores do código, o `.env.example` virou o único lugar que fala deles.
+
+**ESLint, como ferramenta de investigação.** Adicionei ESLint aos dois pacotes
+(`npm run lint`), sem Prettier e sem nenhuma regra de formatação: reformatar os
+57 arquivos produziria um diff que soterraria as correções, e o enunciado
+avalia consistência com o projeto. As regras ativas são as que acusam defeito:
+variável não usada, `require-atomic-updates` (leitura seguida de escrita em
+código assíncrono), `eqeqeq`, e no front as regras de hooks do React. Cada
+desligamento está comentado no `eslint.config.js` do pacote, com o motivo.
+
+O resultado honesto: **não encontrou nenhum bug.** Foram 11 ocorrências, todas
+descartadas depois de verificadas uma a uma:
+
+- 4× `consistent-return` no backend — middleware de Express retornando
+  `res.json()` num ramo e `next()` noutro. Padrão correto do framework.
+- 6× `react-hooks/set-state-in-effect` no front — o padrão "busca dados ao
+  montar e guarda no estado", usado em todas as páginas de dados. Regra de
+  idioma, não de defeito.
+- 1× `no-useless-assignment` em `erp/cliente.js:58`: `let json = null` cujo
+  `null` nunca chegava a ser lido. Corrigi para `let json`, sem mudança de
+  comportamento.
+
+As duas regras que mais pegam bug em React — `rules-of-hooks` e
+`exhaustive-deps` — estão ligadas e não acusaram nada. Vale registrar como
+resultado negativo: os bugs não reportados deste projeto não são do tipo que
+análise estática encontra.
 
 **Estoque defasado em até 30 minutos — não é defeito, é consideração de
 produto.** O README informa que o ERP atualiza o estoque de 30 em 30 minutos.

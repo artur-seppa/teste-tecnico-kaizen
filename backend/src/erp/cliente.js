@@ -55,7 +55,7 @@ async function requisitar(caminho, { parametros, metodo = 'GET', corpo } = {}) {
     );
   }
 
-  let json = null;
+  let json;
   try {
     json = await resposta.json();
   } catch {
