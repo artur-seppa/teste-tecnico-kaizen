@@ -164,6 +164,22 @@ publicado no repositório. O commit base (`main`) preserva o estado como recebid
 | **Corrigi?** | Sim, `git rm --cached` nos dois, cobertos pelo `.gitignore`. Os arquivos continuam no disco. |
 | **Arquivos alterados** | `.gitignore` |
 
+### Problema 5 — `PATCH /perfil` não aceita atualização parcial, e telefone não pode ser apagado
+
+| | |
+|---|---|
+| **O que está errado** | Dois defeitos no mesmo fluxo. **(a)** `routes/perfil.js:30-34` exige `nome` e `documento` em toda chamada (`telefone` é opcional) — enviar só `{"telefone":"..."}` devolve `422` cobrando os outros dois. Mas `services/usuarioService.js:86-88` já faz merge (`nome ?? atual.nome`), ou seja, o serviço foi escrito esperando campos ausentes: a rota contradiz o próprio serviço. **(b)** O telefone usa `telefone \|\| atual.telefone`, enquanto nome e documento usam `??`. Com `\|\|`, mandar `null`, `""` ou omitir cai de volta no valor atual — **não existe forma de apagar um telefone já cadastrado**, e a API responde `200` como se tivesse salvo. |
+| **Como cheguei nele** | Testando o formato de erro de payload da rota (seção 5). Enviei `{"telefone":"11988887777"}` esperando sucesso e recebi `422` cobrando `nome` e `documento`; fui ao serviço entender e encontrei o merge já pronto. Para (b), gravei um telefone e tentei apagá-lo com `null`, com `""` e omitindo o campo: os três devolveram `200` e o número permaneceu. |
+| **Impacto** | Baixo hoje: o front envia o formulário inteiro, então o caminho de uso real funciona. O contrato é que está errado — `PATCH` promete atualização parcial e entrega semântica de substituição. Morde quando aparecer um segundo consumidor (app, script, integração) que mande só o campo alterado. O telefone não-apagável afeta quem cadastrou o número errado e quer removê-lo em vez de trocar. |
+| **Corrigi?** | **Não.** O enunciado pede para anotar como dúvida o que pode ser decisão de produto, e (a) depende de uma escolha que não é minha: como expressar "limpar o campo". O `textoOpcional` colapsa `undefined`, `null` e `""` no mesmo `null`, então tornar os campos opcionais sem antes decidir isso trocaria um defeito por outro — "ausente" passaria a significar "apague". A correção certa é: campos opcionais, `undefined` = não mexe, `null` explícito = limpa (convenção do JSON Merge Patch, RFC 7396), e `??` em vez de `\|\|` no telefone. Mudar `PATCH` para `PUT` **não** resolveria: o perfil inclui `email`, `id` e `criado_em`, e o e-mail é deliberadamente não editável, então um corpo de PUT nunca seria a representação completa que o verbo exige. |
+| **Arquivos alterados** | nenhum |
+
+Verifiquei as outras rotas e **este é o único caso divergente**:
+`PATCH /carrinho/itens/:codigo` pede só `quantidade`, que é o único campo mutável
+do item; `PUT /enderecos/:id` exige a representação completa, que é o correto
+para PUT; `PATCH /perfil/senha` é ação, não edição parcial de recurso; e os
+`POST` exigem tudo por serem criação.
+
 ---
 
 ## 4. Múltiplos carrinhos
@@ -277,7 +293,25 @@ padrão de acumular problemas antes de lançar.
    regressão vira vazamento de dado entre usuários.
 3. **Validação de requisição com schema declarativo (zod)** no backend inteiro,
    com adaptador para o `ApiError` atual. Detalhado na seção 6.
-4. **Cache de leitura do ERP.** Hoje cada leitura de carrinho faz uma chamada
+4. **Especificação OpenAPI (Swagger) da API.** O `ARQUITETURA.md` documenta os
+   24 endpoints numa tabela — e conferi: ela bate exatamente com o código, sem
+   rota fantasma nem rota faltando. O que falta é profundidade. A tabela tem
+   método, caminho, se exige sessão e uma linha de descrição; não tem **forma
+   do payload, catálogo de erros por endpoint nem exemplos de entrada e
+   saída**. Para descobrir que um payload inválido devolve
+   `422 ENTIDADE_NAO_PROCESSAVEL` com `detalhes: [{campo, mensagem}]`, tive que
+   chamar a API — isso não está escrito em lugar nenhum.
+
+   Um `openapi.yaml` servido em `/api/docs` resolveria, e rende além da
+   leitura: importação em Postman, geração de cliente e teste de contrato.
+   Ganha relevância com a funcionalidade nova, porque múltiplos carrinhos muda
+   o contrato — a própria seção 4 deste relatório pede uma tabela de endpoints
+   novos ou alterados, que é exatamente o que uma spec registraria.
+
+   A ressalva: spec escrita à mão envelhece e vira mentira, o que é pior que a
+   tabela em prosa que existe hoje. Só vale se nascer junto de um teste que
+   falhe quando o código e a spec divergirem.
+5. **Cache de leitura do ERP.** Hoje cada leitura de carrinho faz uma chamada
    por item (`carrinhoService.js:18-21`) e `GET /pedidos` faz N chamadas por
    página (`pedidoService.js:117`) — o próprio `ARQUITETURA.md` registra os dois
    como limitação aceita. Catálogo e dados de produto são o caso fácil: mudam
