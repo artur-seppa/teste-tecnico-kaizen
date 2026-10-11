@@ -25,12 +25,23 @@ Backend: `npm install`, criar o `.env`, `npm run db:init`, `npm run dev` (porta
 
 Quatro pontos de atrito:
 
-1. **O README e o código discordam do nome da variável.** O README diz que
-   `SIAC_URL` é a base da API; `config.js` lê `ERP_URL`, que é o nome usado no
-   `.env.example`. Quem segue o README configura uma variável que ninguém lê.
-2. **Não havia como descobrir a URL e o token pelo `.env.example`** — ele diz
-   "cole aqui". Os valores reais estavam hardcoded no `config.js` (ver Problema
-   1), então achei lendo o código, não pela configuração.
+1. **Três nomes para as mesmas duas variáveis.** As credenciais chegaram por
+   e-mail como `SIAC_URL` e `SIAC_TOKEN`; o README fala em `SIAC_URL`; o
+   `.env.example` e o `config.js` usam `ERP_URL` e `ERP_TOKEN`. Quem copia do
+   e-mail ou segue o README define variáveis que ninguém lê — e, no estado
+   original, a aplicação **subia assim mesmo** usando os valores embutidos no
+   código, então o erro não aparecia (ver ponto 3 e Problema 1).
+2. **O README não diz que as credenciais precisam ser pedidas.** Ele cita
+   `SIAC_URL` como se já estivesse disponível, e o `.env.example` só diz "cole
+   aqui". Nada nos dois indica a quem pedir. Para quem não reparou no e-mail, o
+   único lugar onde os valores existiam era hardcoded no `config.js` — foi
+   assim que os encontrei, lendo o código, não pela configuração.
+
+   Sugestão: o README deveria registrar que `SIAC_URL` e `SIAC_TOKEN` são
+   credenciais enviadas por e-mail e, na falta delas, devem ser pedidas ao
+   responsável pelo teste — além de usar o mesmo nome que o código lê. Como o
+   README é o enunciado, não o alterei; coloquei essa indicação no
+   `.env.example`, que é o arquivo que o projeto de fato manda copiar.
 3. **A aplicação sobe sem `.env` nenhum**, usando segredo e token embutidos.
    Isso esconde o erro de configuração em vez de expô-lo — é o oposto do
    fail-fast que o `ARQUITETURA.md` descreve.
@@ -314,7 +325,35 @@ alguém colá-lo no próprio `.env` para voltar ao ponto de partida. Ver seção
 
 **Inconsistência na documentação.** O README chama a variável de `SIAC_URL`; o
 código e o `.env.example` usam `ERP_URL`. Não alterei o README por ser o
-enunciado do teste.
+enunciado do teste — registrei a diferença no próprio `.env.example`, junto com
+a indicação de que URL e token são credenciais e devem ser pedidas ao time do
+SIAC. Isso fechou a lacuna que a correção do Problema 1 abriu: ao tirar os
+valores do código, o `.env.example` virou o único lugar que fala deles.
+
+**ESLint, como ferramenta de investigação.** Adicionei ESLint aos dois pacotes
+(`npm run lint`), sem Prettier e sem nenhuma regra de formatação: reformatar os
+57 arquivos produziria um diff que soterraria as correções, e o enunciado
+avalia consistência com o projeto. As regras ativas são as que acusam defeito:
+variável não usada, `require-atomic-updates` (leitura seguida de escrita em
+código assíncrono), `eqeqeq`, e no front as regras de hooks do React. Cada
+desligamento está comentado no `eslint.config.js` do pacote, com o motivo.
+
+O resultado honesto: **não encontrou nenhum bug.** Foram 11 ocorrências, todas
+descartadas depois de verificadas uma a uma:
+
+- 4× `consistent-return` no backend — middleware de Express retornando
+  `res.json()` num ramo e `next()` noutro. Padrão correto do framework.
+- 6× `react-hooks/set-state-in-effect` no front — o padrão "busca dados ao
+  montar e guarda no estado", usado em todas as páginas de dados. Regra de
+  idioma, não de defeito.
+- 1× `no-useless-assignment` em `erp/cliente.js:58`: `let json = null` cujo
+  `null` nunca chegava a ser lido. Corrigi para `let json`, sem mudança de
+  comportamento.
+
+As duas regras que mais pegam bug em React — `rules-of-hooks` e
+`exhaustive-deps` — estão ligadas e não acusaram nada. Vale registrar como
+resultado negativo: os bugs não reportados deste projeto não são do tipo que
+análise estática encontra.
 
 **Estoque defasado em até 30 minutos — não é defeito, é consideração de
 produto.** O README informa que o ERP atualiza o estoque de 30 em 30 minutos.
