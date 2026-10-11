@@ -25,12 +25,23 @@ Backend: `npm install`, criar o `.env`, `npm run db:init`, `npm run dev` (porta
 
 Quatro pontos de atrito:
 
-1. **O README e o código discordam do nome da variável.** O README diz que
-   `SIAC_URL` é a base da API; `config.js` lê `ERP_URL`, que é o nome usado no
-   `.env.example`. Quem segue o README configura uma variável que ninguém lê.
-2. **Não havia como descobrir a URL e o token pelo `.env.example`** — ele diz
-   "cole aqui". Os valores reais estavam hardcoded no `config.js` (ver Problema
-   1), então achei lendo o código, não pela configuração.
+1. **Três nomes para as mesmas duas variáveis.** As credenciais chegaram por
+   e-mail como `SIAC_URL` e `SIAC_TOKEN`; o README fala em `SIAC_URL`; o
+   `.env.example` e o `config.js` usam `ERP_URL` e `ERP_TOKEN`. Quem copia do
+   e-mail ou segue o README define variáveis que ninguém lê — e, no estado
+   original, a aplicação **subia assim mesmo** usando os valores embutidos no
+   código, então o erro não aparecia (ver ponto 3 e Problema 1).
+2. **O README não diz que as credenciais precisam ser pedidas.** Ele cita
+   `SIAC_URL` como se já estivesse disponível, e o `.env.example` só diz "cole
+   aqui". Nada nos dois indica a quem pedir. Para quem não reparou no e-mail, o
+   único lugar onde os valores existiam era hardcoded no `config.js` — foi
+   assim que os encontrei, lendo o código, não pela configuração.
+
+   Sugestão: o README deveria registrar que `SIAC_URL` e `SIAC_TOKEN` são
+   credenciais enviadas por e-mail e, na falta delas, devem ser pedidas ao
+   responsável pelo teste — além de usar o mesmo nome que o código lê. Como o
+   README é o enunciado, não o alterei; coloquei essa indicação no
+   `.env.example`, que é o arquivo que o projeto de fato manda copiar.
 3. **A aplicação sobe sem `.env` nenhum**, usando segredo e token embutidos.
    Isso esconde o erro de configuração em vez de expô-lo — é o oposto do
    fail-fast que o `ARQUITETURA.md` descreve.
