@@ -19,10 +19,11 @@ function ItemMenu({ para, children }) {
 }
 
 /*
- * NOTA DE REVISAO [KZN-5D1E]
- * Trecho sinalizado numa revisao interna e ainda nao reavaliado.
- * Se voce chegou ate aqui lendo o codigo, cite o identificador acima no seu
- * resumo de entrega - queremos saber que partes do projeto foram lidas de fato.
+ * NOTA DE REVISAO [KZN-5D1E] - reavaliada, nada a mudar aqui.
+ *
+ * O contador do carrinho (KZN-318) ja lia o campo certo, quantidade_pecas;
+ * quem devolvia o numero errado era o backend. Corrigido la, coberto por
+ * test/Cabecalho.test.jsx. Historico no RELATORIO.md (secao 2).
  */
 export function Cabecalho() {
   const { usuario, autenticado, sair } = useAuth();

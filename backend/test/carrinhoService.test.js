@@ -104,6 +104,26 @@ describe('lerCarrinho', () => {
     });
   });
 
+  describe('KZN-318 - contador do icone do carrinho', () => {
+    it('conta as unidades, nao as linhas', async () => {
+      semearCarrinho(db, usuarioId, [['ARR-7001', 2], ['ARR-7003', 3]]);
+
+      const carrinho = await lerCarrinho(usuarioId, db);
+
+      expect(carrinho.quantidade_pecas).toBe(5);
+      expect(carrinho.quantidade_itens).toBe(2);
+    });
+
+    it('conta tambem as unidades do item indisponivel', async () => {
+      // O contador diz quantas pecas tem ai dentro, nao quantas da para levar.
+      semearCarrinho(db, usuarioId, [['ARR-7001', 2], ['ARR-7002', 1]]);
+
+      const carrinho = await lerCarrinho(usuarioId, db);
+
+      expect(carrinho.quantidade_pecas).toBe(3);
+    });
+  });
+
   it('le o preco no ERP a cada leitura, sem cache local', async () => {
     semearCarrinho(db, usuarioId, [['ARR-7001', 1]]);
 
