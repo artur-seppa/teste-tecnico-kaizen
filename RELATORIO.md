@@ -117,10 +117,41 @@ Sobre os 30 minutos do README: vale ser preciso, porque é fácil contar errado.
 
 | | |
 |---|---|
-| **Causa** | |
-| **Como reproduzi** | |
-| **Arquivos alterados** | |
-| **Como validei a correção** | |
+| **Causa** | `Checkout.jsx:54` ignorava a escolha da pessoa e recalculava o endereço no momento do envio: `const entrega = enderecos.find((item) => item.principal) ?? enderecos[0]`. É a mesma expressão da linha 25, que define o valor **inicial** do radio. A tela guarda a seleção em `enderecoId` (`setEnderecoId`, linha 119), mas `finalizar()` não lia esse estado — mandava `entrega?.id`. Resultado: todo pedido ia para o endereço `principal`, ou para o primeiro da lista se nenhum fosse principal, independentemente do que a pessoa marcou. |
+| **Como reproduzi** | Primeiro pela leitura do fluxo completo (tela → rota → serviço). Depois em **dado real**: o pedido `PED-2026-000011` do banco de desenvolvimento registrou o endereço "Casa", que é o principal, com "Trabalho" também cadastrado. |
+| **Arquivos alterados** | `frontend/src/paginas/Checkout.jsx` |
+| **Como validei a correção** | Cinco testes de componente em `frontend/test/Checkout.test.jsx`, montando a tela com a API mockada: escolher o não-principal fecha nele; escolher o principal continua funcionando; o principal segue pré-selecionado ao abrir; sem nenhum principal marca o primeiro; e endereço cadastrado durante o próprio checkout vira o escolhido. O primeiro falha se a correção for revertida. |
+
+**O backend está correto e não precisa mudar.** `buscarEndereco`
+(`enderecoService.js:30-32`) filtra por `id` **e** `usuario_id`, então não há
+vazamento entre contas; `finalizarPedido` grava o snapshot do endereço que
+recebeu. Ele recebeu o id da casa e gravou a casa. O dado errado chegou pronto
+do front.
+
+**Por que não acontece sempre:** quem tem um endereço só nunca vê o problema, e
+quem escolhe justamente o principal também não. Só aparece ao escolher diferente
+do principal — o que explica "duas vezes essa semana" em vez de toda hora.
+
+**O chamado subestima o alcance.** `enderecoId` é usado apenas para marcar o
+radio e habilitar o botão (`:200`); nenhuma outra linha o lê. A tela de escolha
+de endereço não influencia o pedido em nada. A logística reportou dois casos,
+mas o defeito atinge **todo** pedido de quem escolhe algo diferente do principal.
+
+Vale registrar o que o comentário da linha 53 diz: *"Entrega vai para o endereço
+principal do cliente"*. Ele descreve com precisão o que o código faz — a lista de
+seleção provavelmente veio depois e o envio não foi ajustado. O código não está
+incoerente consigo mesmo; está incoerente com a tela que ele serve.
+
+**Duas coisas que verifiquei antes de corrigir:**
+
+1. `enderecoSalvo()` (`:34`) já chama `setEnderecoId(novo.id)`, então o endereço
+   cadastrado durante o checkout é selecionado. Esse caminho estava correto, mas
+   agora o envio depende dele — por isso virou teste.
+2. O `?? enderecos[0]` saiu junto. Com a correção, `enderecoId` nunca é nulo
+   enquanto o botão estiver habilitado (`:200` já checa `!enderecoId`), então o
+   fallback não tem mais uso. Melhor assim: foi um fallback silencioso que
+   permitiu o defeito passar despercebido — na falta de principal ele escolhia
+   um endereço qualquer em vez de deixar o problema aparecer.
 
 
 
