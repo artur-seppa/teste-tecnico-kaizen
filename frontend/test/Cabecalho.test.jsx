@@ -1,7 +1,7 @@
 import { faker } from '@faker-js/faker';
-import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { BrowserRouter, MemoryRouter } from 'react-router-dom';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { carrinhoFactory, itemCarrinhoFactory } from './factories/carrinho.js';
 import { usuarioFactory } from './factories/usuario.js';
 
@@ -100,5 +100,66 @@ describe('Cabecalho - contador do carrinho (KZN-318)', () => {
 
     expect(await screen.findByRole('link', { name: /carrinho/i })).toBeInTheDocument();
     expect(screen.queryByLabelText(/no carrinho/i)).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * A busca do topo monta a URL da vitrine a partir da URL atual, entao o teste
+ * precisa de uma URL de verdade - MemoryRouter nao toca em window.location.
+ */
+function montarNaVitrine(url) {
+  window.history.pushState({}, '', url);
+  api.auth.eu.mockRejectedValue(new Error('401'));
+  api.carrinho.ler.mockRejectedValue(new Error('401'));
+
+  return render(
+    <BrowserRouter>
+      <ProvedorAuth>
+        <ProvedorCarrinho>
+          <Cabecalho />
+        </ProvedorCarrinho>
+      </ProvedorAuth>
+    </BrowserRouter>,
+  );
+}
+
+const pesquisar = async (termo) => {
+  const campo = await screen.findByLabelText(/buscar/i);
+  fireEvent.change(campo, { target: { value: termo } });
+  fireEvent.submit(campo.closest('form'));
+};
+
+const urlAtual = () => new URLSearchParams(window.location.search);
+
+afterEach(() => window.history.pushState({}, '', '/'));
+
+describe('Cabecalho - busca feita fora da primeira pagina (KZN-325)', () => {
+  it('pesquisa a partir da primeira pagina, nao da pagina em que o cliente estava', async () => {
+    // O relato do chamado: o cliente avancou ate a pagina 5 e so entao buscou.
+    montarNaVitrine('/?pagina=5');
+
+    await pesquisar('amortecedor');
+
+    expect(urlAtual().get('busca')).toBe('amortecedor');
+    expect(urlAtual().has('pagina')).toBe(false);
+  });
+
+  it('preserva os filtros ja aplicados na vitrine', async () => {
+    montarNaVitrine('/?categoria=SUSPENSAO&somente_disponiveis=true&pagina=3');
+
+    await pesquisar('amortecedor');
+
+    expect(urlAtual().get('categoria')).toBe('SUSPENSAO');
+    expect(urlAtual().get('somente_disponiveis')).toBe('true');
+    expect(urlAtual().has('pagina')).toBe(false);
+  });
+
+  it('limpar o termo tira a busca da URL e volta para a primeira pagina', async () => {
+    montarNaVitrine('/?busca=amortecedor&pagina=2');
+
+    await pesquisar('   ');
+
+    expect(urlAtual().has('busca')).toBe(false);
+    expect(urlAtual().has('pagina')).toBe(false);
   });
 });

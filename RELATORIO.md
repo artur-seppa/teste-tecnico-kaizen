@@ -106,10 +106,37 @@ Sobre os 30 minutos do README: vale ser preciso, porque é fácil contar errado.
 
 | | |
 |---|---|
-| **Causa** | |
-| **Como reproduzi** | |
-| **Arquivos alterados** | |
-| **Como validei a correção** | |
+| **Causa** | A página ficava na URL quando o resultado mudava. `Cabecalho.jsx:40` montava a URL da pesquisa a partir dos parâmetros atuais e preservava **todos** eles, inclusive `pagina`. Buscar "amortecedor" estando na página 5 navegava para `/?pagina=5&busca=amortecedor`: o ERP devolve 3 resultados em 1 página, a página 5 vem vazia, e a vitrine mostra "Nenhuma peça encontrada". O mesmo valia para os outros filtros, por `trocarParametro` (`Catalogo.jsx:70`), que também preservava a página ao trocar categoria ou marcar "Só com estoque". |
+| **Como reproduzi** | Pela API real, com o backend em execução: `GET /api/catalogo?busca=amortecedor&tamanho=24` devolve os 3 amortecedores; a mesma busca com `&pagina=5` devolve `{"dados":[],"paginacao":{"pagina":5,"total":3,"total_paginas":1}}`. É exatamente o que o front pedia depois de avançar as páginas. |
+| **Arquivos alterados** | `frontend/src/componentes/Cabecalho.jsx`, `frontend/src/paginas/Catalogo.jsx` |
+| **Como validei a correção** | Sete testes de componente: três em `frontend/test/Cabecalho.test.jsx` para a busca do topo (o caso literal do chamado, preservação dos demais filtros e limpeza do termo) e quatro em `frontend/test/Catalogo.test.jsx` para os filtros da vitrine. O último deles é o controle: navegar entre páginas **não** pode zerar a página, senão a correção quebraria a paginação. Os testes do cabeçalho usam `BrowserRouter` com URL real, porque `MemoryRouter` não toca em `window.location` e o defeito passaria despercebido. |
+
+**A regra que faltava.** Página não é filtro: é uma posição dentro de um
+resultado. Mexer no filtro troca o resultado, e a posição antiga deixa de
+existir. Os dois pontos de entrada tratavam `pagina` como se fosse mais um
+filtro a preservar. A correção é a mesma nos dois: ao mudar o que define o
+resultado, a posição volta para o começo.
+
+**Por que "se pesquisa assim que entra, funciona".** Sem `pagina` na URL, o
+front assume 1. O atendimento descreveu com precisão a condição de contorno —
+o defeito depende de já existir uma página na URL.
+
+**O backend está correto.** `lerPaginacao` (`validacao.js`) trata a página como
+número e o ERP responde com `total_paginas: 1` junto da lista vazia. Pedir a
+página 5 de um resultado com uma página é uma pergunta coerente com resposta
+vazia; quem estava errado era a pergunta.
+
+**Um detalhe que piora o sintoma.** Quando a lista volta vazia, o `EstadoVazio`
+substitui a grade **e** a paginação (`Catalogo.jsx:171-196`). A pessoa perde o
+controle que a tiraria da página inválida e só lhe resta "Limpar filtros", que
+descarta a busca inteira. Com a correção o estado deixa de acontecer por esse
+caminho, mas vale saber que ele não tem saída própria.
+
+**De passagem, uma coisa que o `Cabecalho` fazia e não devia.** `pesquisar()`
+lia `window.location.search` enquanto o componente já recebia os parâmetros do
+roteador por `useSearchParams()` (`:32`). Em produção os dois coincidem, mas é
+o componente furando o roteador para consultar o navegador direto — e é o que
+tornava o comportamento invisível em teste. Passou a ler `parametros`.
 
 
 

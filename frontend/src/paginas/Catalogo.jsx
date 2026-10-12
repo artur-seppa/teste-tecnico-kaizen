@@ -74,6 +74,11 @@ export function Catalogo() {
       if (valor === null || valor === '' || valor === false) proximos.delete(chave);
       else proximos.set(chave, String(valor));
 
+      // A pagina e uma posicao dentro de um resultado, nao um filtro: mexer no
+      // filtro troca o resultado e a posicao antiga deixa de existir. Sem isto,
+      // filtrar na pagina 5 pede a pagina 5 de uma lista que pode ter uma so.
+      if (chave !== 'pagina') proximos.delete('pagina');
+
       setParametros(proximos);
     },
     [parametros, setParametros],
