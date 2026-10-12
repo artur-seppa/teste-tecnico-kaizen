@@ -50,9 +50,10 @@ export function Checkout() {
     setEnviando(true);
 
     try {
-      // Entrega vai para o endereco principal do cliente.
-      const entrega = enderecos.find((item) => item.principal) ?? enderecos[0];
-      const resposta = await api.pedidos.criar({ endereco_id: entrega?.id, observacao });
+      // Entrega vai para o endereco que a pessoa marcou. O principal decide
+      // apenas qual vem pre-selecionado ao abrir a tela (ver o efeito acima);
+      // daqui para baixo quem manda e a escolha dela.
+      const resposta = await api.pedidos.criar({ endereco_id: enderecoId, observacao });
       await recarregar();
       navegar(`/pedidos/${resposta.dados.numero}`, { replace: true, state: { novo: true } });
     } catch (falha) {
