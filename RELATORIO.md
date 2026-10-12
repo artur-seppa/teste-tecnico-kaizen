@@ -183,7 +183,7 @@ publicado no repositório. O commit base (`main`) preserva o estado como recebid
 |---|---|
 | **O que está errado** | Dois defeitos no mesmo fluxo. **(a)** `routes/perfil.js:30-34` exige `nome` e `documento` em toda chamada (`telefone` é opcional) — enviar só `{"telefone":"..."}` devolve `422` cobrando os outros dois. Mas `services/usuarioService.js:86-88` já faz merge (`nome ?? atual.nome`), ou seja, o serviço foi escrito esperando campos ausentes: a rota contradiz o próprio serviço. **(b)** O telefone usa `telefone \|\| atual.telefone`, enquanto nome e documento usam `??`. Com `\|\|`, mandar `null`, `""` ou omitir cai de volta no valor atual — **não existe forma de apagar um telefone já cadastrado**, e a API responde `200` como se tivesse salvo. |
 | **Como cheguei nele** | Testando o formato de erro de payload da rota (seção 5). Enviei `{"telefone":"11988887777"}` esperando sucesso e recebi `422` cobrando `nome` e `documento`; fui ao serviço entender e encontrei o merge já pronto. Para (b), gravei um telefone e tentei apagá-lo com `null`, com `""` e omitindo o campo: os três devolveram `200` e o número permaneceu. **Depois foi reproduzido pela própria interface**, apagando o campo na tela de Perfil e salvando — ver abaixo. |
-| **Impacto** | **(a)** é só de contrato e não morde hoje, porque o front envia o formulário inteiro; o problema aparece quando surgir um segundo consumidor (app, script, integração) que mande só o campo alterado. **(b) é diferente: quebra o uso normal da tela.** Apagar o telefone no formulário de Perfil e salvar devolve `200`, e o número continua lá. Quem cadastrou o número errado e quer apenas removê-lo não consegue — só trocar por outro. Nada no banco impede: `schema.sql:19` declara `telefone TEXT` sem `NOT NULL`. |
+| **Impacto** | **(a)** é defeito apenas de contrato e não afeta o uso atual, porque o front envia o formulário inteiro. O problema aparece quando surgir um segundo consumidor (app, script, integração) que mande só o campo alterado. **(b) é diferente: quebra o uso normal da tela.** Apagar o telefone no formulário de Perfil e salvar devolve `200`, e o número continua lá. Quem cadastrou o número errado e quer apenas removê-lo não consegue — só trocar por outro. Nada no banco impede: `schema.sql:19` declara `telefone TEXT` sem `NOT NULL`. |
 | **Corrigi?** | **Não.** O enunciado pede para anotar como dúvida o que pode ser decisão de produto, e (a) depende de uma escolha que não é minha: como expressar "limpar o campo". O `textoOpcional` colapsa `undefined`, `null` e `""` no mesmo `null`, então tornar os campos opcionais sem antes decidir isso trocaria um defeito por outro — "ausente" passaria a significar "apague". A correção certa é: campos opcionais, `undefined` = não mexe, `null` explícito = limpa (convenção do JSON Merge Patch, RFC 7396), e `??` em vez de `\|\|` no telefone. Mudar `PATCH` para `PUT` **não** resolveria: o perfil inclui `email`, `id` e `criado_em`, e o e-mail é deliberadamente não editável, então um corpo de PUT nunca seria a representação completa que o verbo exige. |
 | **Arquivos alterados** | nenhum |
 
@@ -241,13 +241,13 @@ Diante desse `null`, as duas funções decidem o contrário uma da outra:
 Confirmei com teste descartável: mockando `buscarProduto` para devolver `null`,
 a quantidade foi para 99 e a chamada respondeu sucesso.
 
-**O estrago é contido** — e vale dizer, para não inflar: a leitura seguinte do
+**O alcance é limitado** — e vale registrar, para não superdimensionar: a leitura seguinte do
 carrinho marca a linha como indisponível e `pronto_para_checkout` fica `false`,
 então nenhum pedido ruim passa. O que se perde é o momento e o rótulo do erro:
 a pessoa recebe `200`, e só na tela seguinte vê o item bloqueado com uma
-mensagem que fala de catálogo quando o que houve foi o ERP respondendo torto.
+mensagem que fala de catálogo quando o que houve foi uma resposta malformada do ERP.
 
-Incomoda mais a assimetria do que o sintoma. Diante da mesma incerteza, um
+A assimetria preocupa mais que o sintoma. Diante da mesma incerteza, um
 caminho recusa e o outro deixa passar — não dá para ler o código e saber qual é
 a regra da casa. É o mesmo tipo de divergência interna que produziu o KZN-312.
 Correção: `if (!produto) throw ApiError.naoEncontrado(...)` antes da checagem,
@@ -259,7 +259,7 @@ igual ao `adicionarItem`.
 |---|---|
 | **O que está errado** | `erp/cliente.js:144` usa `AbortSignal.timeout(3000)` fixo. Todo o resto do cliente respeita `config.erp.timeoutMs`; só a sonda de inicialização não. A variável existe, está documentada no `.env.example` e não vale para o único ponto que fala com o ERP antes de qualquer cliente aparecer. |
 | **Como cheguei nele** | O backend subiu imprimindo `ERP: ... -> INDISPONIVEL (timeout)` com o ERP de pé. Medi: `curl` respondeu em 0,97 s e o `fetch` do Node em 34–412 ms em quatro tentativas. O ERP estava normal; foi o primeiro acesso, com DNS e TLS frios, esbarrando num limite mais apertado que o configurado. |
-| **Impacto** | Nenhum para quem compra — a sonda não derruba o processo e a aplicação funciona. O dano é de diagnóstico: quem sobe o projeto lê "INDISPONIVEL" e vai caçar problema de rede que não existe, ou pior, assume que o ambiente está quebrado e para. Barulho na direção errada. |
+| **Impacto** | Nenhum para quem compra — a sonda não derruba o processo e a aplicação funciona. O dano é de diagnóstico: quem sobe o projeto lê "INDISPONIVEL" e investiga um problema de rede que não existe, ou assume que o ambiente está quebrado e interrompe o trabalho. O aviso aponta para o lugar errado. |
 | **Corrigi?** | **Não**, pelo mesmo motivo do Problema 6: não é dos chamados desta branch. A correção é trocar o literal por `config.erp.timeoutMs`. Vale discutir se a sonda deveria ter limite próprio e **menor** que o das requisições — não travar a subida por 8 s é defensável —, mas então ele precisa ser uma variável declarada, não um número solto no meio do arquivo. |
 | **Arquivos alterados** | nenhum |
 
@@ -371,7 +371,7 @@ cd frontend && npm test   # 11 testes
 dependência nova, e a primeira versão do teste ficou assim: quatro linhas de
 `process.env` no corpo do arquivo e `await import()` no lugar dos imports do
 topo. `config.js` lê o ambiente na importação, e eu não tinha como interceptar
-isso. A gambiarra existia por limitação da ferramenta e vazava para dentro do
+isso. O contorno existia por limitação da ferramenta e vazava para dentro do
 teste.
 
 Vitest resolve com `env` no config, e os imports voltam ao topo. Pesou também
