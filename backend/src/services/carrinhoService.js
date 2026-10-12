@@ -70,10 +70,11 @@ async function enriquecerItens(linhas) {
 }
 
 /*
- * NOTA DE REVISAO [KZN-7F3A]
- * Trecho sinalizado numa revisao interna e ainda nao reavaliado.
- * Se voce chegou ate aqui lendo o codigo, cite o identificador acima no seu
- * resumo de entrega - queremos saber que partes do projeto foram lidas de fato.
+ * NOTA DE REVISAO [KZN-7F3A] - reavaliada, trecho corrigido.
+ *
+ * Historico no RELATORIO.md (secao 2). Os dois chamados do carrinho moravam
+ * aqui: o total somava linha indisponivel (KZN-312) e quantidade_pecas
+ * repetia itens.length (KZN-318).
  */
 export async function lerCarrinho(usuarioId, db = obterBanco()) {
   const linhas = db
