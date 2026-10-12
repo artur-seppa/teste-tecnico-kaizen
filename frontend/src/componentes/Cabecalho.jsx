@@ -36,8 +36,12 @@ export function Cabecalho() {
     evento.preventDefault();
     const termo = busca.trim();
 
-    // Preserva os filtros que ja estavam aplicados na vitrine.
-    const atuais = new URLSearchParams(window.location.search);
+    // Preserva os filtros que ja estavam aplicados na vitrine, menos a pagina:
+    // pesquisar troca o resultado inteiro, entao a posicao antiga dentro dele
+    // nao vale mais. Buscar na pagina 5 pedia a pagina 5 do resultado novo, que
+    // costuma ter uma so - e a vitrine dizia "Nenhuma peca encontrada".
+    const atuais = new URLSearchParams(parametros);
+    atuais.delete('pagina');
     if (termo) atuais.set('busca', termo);
     else atuais.delete('busca');
 

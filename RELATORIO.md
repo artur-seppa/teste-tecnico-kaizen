@@ -106,10 +106,37 @@ Sobre os 30 minutos do README: vale ser preciso, porque é fácil contar errado.
 
 | | |
 |---|---|
-| **Causa** | |
-| **Como reproduzi** | |
-| **Arquivos alterados** | |
-| **Como validei a correção** | |
+| **Causa** | A página ficava na URL quando o resultado mudava. `Cabecalho.jsx:40` montava a URL da pesquisa a partir dos parâmetros atuais e preservava **todos** eles, inclusive `pagina`. Buscar "amortecedor" estando na página 5 navegava para `/?pagina=5&busca=amortecedor`: o ERP devolve 3 resultados em 1 página, a página 5 vem vazia, e a vitrine mostra "Nenhuma peça encontrada". O mesmo valia para os outros filtros, por `trocarParametro` (`Catalogo.jsx:70`), que também preservava a página ao trocar categoria ou marcar "Só com estoque". |
+| **Como reproduzi** | Pela API real, com o backend em execução: `GET /api/catalogo?busca=amortecedor&tamanho=24` devolve os 3 amortecedores; a mesma busca com `&pagina=5` devolve `{"dados":[],"paginacao":{"pagina":5,"total":3,"total_paginas":1}}`. É exatamente o que o front pedia depois de avançar as páginas. |
+| **Arquivos alterados** | `frontend/src/componentes/Cabecalho.jsx`, `frontend/src/paginas/Catalogo.jsx` |
+| **Como validei a correção** | Sete testes de componente: três em `frontend/test/Cabecalho.test.jsx` para a busca do topo (o caso literal do chamado, preservação dos demais filtros e limpeza do termo) e quatro em `frontend/test/Catalogo.test.jsx` para os filtros da vitrine. O último deles é o controle: navegar entre páginas **não** pode zerar a página, senão a correção quebraria a paginação. Os testes do cabeçalho usam `BrowserRouter` com URL real, porque `MemoryRouter` não toca em `window.location` e o defeito passaria despercebido. |
+
+**A regra que faltava.** Página não é filtro: é uma posição dentro de um
+resultado. Mexer no filtro troca o resultado, e a posição antiga deixa de
+existir. Os dois pontos de entrada tratavam `pagina` como se fosse mais um
+filtro a preservar. A correção é a mesma nos dois: ao mudar o que define o
+resultado, a posição volta para o começo.
+
+**Por que "se pesquisa assim que entra, funciona".** Sem `pagina` na URL, o
+front assume 1. O atendimento descreveu com precisão a condição de contorno —
+o defeito depende de já existir uma página na URL.
+
+**O backend está correto.** `lerPaginacao` (`validacao.js`) trata a página como
+número e o ERP responde com `total_paginas: 1` junto da lista vazia. Pedir a
+página 5 de um resultado com uma página é uma pergunta coerente com resposta
+vazia; quem estava errado era a pergunta.
+
+**Um detalhe que piora o sintoma.** Quando a lista volta vazia, o `EstadoVazio`
+substitui a grade **e** a paginação (`Catalogo.jsx:171-196`). A pessoa perde o
+controle que a tiraria da página inválida e só lhe resta "Limpar filtros", que
+descarta a busca inteira. Com a correção o estado deixa de acontecer por esse
+caminho, mas vale saber que ele não tem saída própria.
+
+**De passagem, uma coisa que o `Cabecalho` fazia e não devia.** `pesquisar()`
+lia `window.location.search` enquanto o componente já recebia os parâmetros do
+roteador por `useSearchParams()` (`:32`). Em produção os dois coincidem, mas é
+o componente furando o roteador para consultar o navegador direto — e é o que
+tornava o comportamento invisível em teste. Passou a ler `parametros`.
 
 
 
@@ -332,6 +359,108 @@ esse caso nos dados de desenvolvimento. Preencher a partir do CEP resolve os doi
 de uma vez: tira o trabalho de digitação e elimina a divergência por construção.
 Num sistema cujo chamado de maior prioridade é entrega no endereço errado, isso
 deixa de ser conveniência e vira integridade do dado.
+
+### Problema 10 — A última página do catálogo é inalcançável pelo botão "Próxima"
+
+| | |
+|---|---|
+| **O que está errado** | `ui.jsx`, componente `Paginacao`: o botão "Próxima" usa `disabled={pagina >= totalPaginas - 1}`. O limite é `totalPaginas`, não `totalPaginas - 1`. Com 5 páginas, o botão desabilita ao chegar na 4; com 2 páginas — o menor caso em que a paginação aparece, já que ela se esconde com `total_paginas <= 1` — ele nasce desabilitado e a página 2 nunca é alcançada. O botão "Anterior" ao lado usa `pagina <= 1`, que está correto. |
+| **Como cheguei nele** | Lendo o componente de paginação durante o KZN-325, porque a correção mexe em quem decide a página. Confirmado com um teste descartável montando `Paginacao` direto: com 2 páginas o botão nasce desabilitado; com 5, trava na 4. |
+| **Impacto** | É o mesmo prejuízo do chamado por outro caminho: peça que existe e não aparece. A última página de **toda** listagem fica fora do alcance da navegação. Silencioso, ainda por cima: botão desabilitado parece fim de lista, não defeito. |
+| **Corrigi?** | **Não** — não é o chamado desta branch, e misturar deixaria o commit contando duas histórias. A correção é trocar o limite por `pagina >= totalPaginas` e cobrir com teste o caso de duas páginas, que é onde o erro é total e não parcial. |
+| **Arquivos alterados** | nenhum |
+
+**Em "Meus pedidos" não há contorno.** A vitrine guarda a página na URL, então
+dá para digitar `?pagina=3` e escapar do botão. `Pedidos.jsx:9` guarda a página
+em `useState`: não existe URL para forçar. Quem tiver mais de dez pedidos não
+alcança os mais antigos por nenhum caminho da interface — o botão é a única
+porta, e ela está trancada uma página antes do fim.
+
+Confirmei com o banco de desenvolvimento populado até três páginas: a listagem
+pelo service responde `total_paginas: 3` e a tela trava na página 2.
+
+**O defeito do KZN-325 não se repete nos pedidos, e por construção.**
+`Pedidos.jsx` não tem filtro nenhum e a página não vive na URL. Sem filtro que
+troque o resultado, não existe a situação em que a posição antiga deixa de
+valer. A causa raiz do chamado é específica da vitrine; o que as duas telas
+compartilham é o componente de paginação.
+
+**Dois pontos menores na mesma tela**, que não classifico como defeito:
+
+1. `Pedidos.jsx:42` — lista vazia sempre diz "Você ainda não fez pedidos". Numa
+   página vazia a frase mente, e a paginação some junto, porque o `return` vem
+   antes dela. Hoje é latente: o botão quebrado impede chegar lá. Corrigido o
+   botão, o caminho abre. É o mesmo mal-entendido do KZN-325 — página vazia
+   tratada como coleção vazia.
+2. `Pedidos.jsx:36` — trocar de página substitui a lista inteira por
+   "Carregando seus pedidos...". É incômodo, não incorreção.
+
+### Problema 11 — A borda do catálogo não valida nada e terceiriza a validação ao ERP
+
+| | |
+|---|---|
+| **O que está errado** | `routes/catalogo.js:20-30` repassa `busca`, `categoria` e `marca` crus para o ERP. Só `pagina`, `tamanho` e `somente_disponiveis` passam por alguma leitura (`lerPaginacao`, `lerBooleano`), e mesmo essas não recusam nada: corrigem em silêncio. Não há tipo, tamanho, formato nem conjunto de valores aceitos. Quem recusa entrada inválida é o ERP. |
+| **Como cheguei nele** | Perguntado durante a revisão do KZN-325, verificado contra a loja em execução. |
+| **Impacto** | Três consequências, em ordem de gravidade. **(1)** `categoria=XPTO` devolve `200` com lista vazia, e a tela diz "Nenhuma peça encontrada" — o mesmo mal-entendido do KZN-325, vazio confundido com inexistente. Uma categoria inválida não é uma busca sem resultado: é uma pergunta malformada, e merece `422`. **(2)** `busca` com 5000 caracteres é recusada — **pelo ERP**, com `422 "Filtros invalidos."`, e a mensagem dele atravessa a loja e chega ao cliente. A loja depende de um terceiro para validar a própria entrada, e vaza o vocabulário desse terceiro. **(3)** `somente_disponiveis=banana` é ignorado: `lerBooleano` devolve `null`, o filtro não é aplicado e a resposta é `200` com tudo. A pessoa pediu "só com estoque", recebeu o catálogo inteiro e nada avisou. É o mesmo defeito de fundo do Problema 9. |
+| **Corrigi?** | **Não** — fora do escopo do chamado. A correção é validar na borda, como `routes/pedidos.js` e `routes/enderecos.js` já fazem com o corpo: `busca` como texto opcional com tamanho máximo; `categoria` e `marca` contra a lista que o ERP conhece (`GET /produtos/categorias` já existe e o catálogo já a consome); booleano de query que acuse valor irreconhecível em vez de engolir. O `ColetorDeErros` do `validacao.js` já faz exatamente isso para corpo — falta a versão para query. |
+| **Arquivos alterados** | nenhum |
+
+**`categoria` deveria ser um conjunto fechado.** É o ponto mais barato de todos:
+a lista de categorias válidas já é servida pelo próprio backend em
+`/api/catalogo/categorias`, que a vitrine usa para montar os botões de filtro. O
+mesmo dado que desenha a interface deveria governar a validação — e hoje não
+governa nada. O `uf()` do `validacao.js:149-165` já é esse padrão, validando
+contra as 27 siglas; falta aplicá-lo aqui.
+
+**`marca` é filtro morto.** O ERP suporta (`?marca=Cofap` devolve exatamente os
+produtos da Cofap), a loja repassa, e **nenhuma tela do front envia**. Procurei:
+`marca` aparece no `CardProduto` e na página de produto, só como texto exibido.
+É um filtro alcançável apenas chamando a API diretamente. Ou a vitrine ganha o
+filtro de marca — e aí ele precisa de validação como a categoria —, ou o
+parâmetro sai da rota. Mantê-lo sem uso e sem validação é o pior dos três.
+
+**Sobre SQL injection: não há, e não é por sorte.** Verifiquei o backend inteiro.
+Toda consulta usa *prepared statement* do `better-sqlite3` com parâmetros
+ligados (`?` posicional ou `@nome`); não existe uma única query montada por
+concatenação ou template string. O único `db.exec()` com variável
+(`db/index.js:23`) recebe o `schema.sql` lido do disco, não entrada de usuário.
+Testei `?busca=' OR 1=1--` e a resposta foi `200` com zero resultados — o texto
+foi tratado como texto. Some-se a isso que o catálogo **nem toca no banco**: ele
+conversa com o ERP, e os parâmetros vão por `URLSearchParams`
+(`erp/cliente.js:22-30`), que escapa o valor, então também não dá para injetar
+parâmetro na URL do ERP.
+
+A ressalva honesta: isso protege contra injeção, **não** contra entrada inválida.
+São problemas diferentes, e o segundo é o que está aberto. Dado não validado que
+não quebra o banco ainda produz resposta errada, mensagem errada e, no caso do
+`documento` (Problema 8), dado sujo persistido e enviado ao ERP.
+
+**O ERP é caixa-preta, e isso reforça a borda em vez de dispensá-la.** Não
+conhecemos o interior do ERP e não o testamos — procurar falha em sistema de
+terceiro, compartilhado com outros candidatos e sem autorização, está fora do
+escopo deste teste. A conclusão "sem injeção" acima vale para o **código da
+loja**, não para o que está atrás dela. Justamente por não sabermos como o ERP
+trata o que recebe, a loja não pode terceirizar a ele a validação da entrada:
+hoje `busca`, `categoria` e `marca` chegam crus na porta de um sistema cujo
+estado interno desconhecemos, e a loja seria o veículo de qualquer entrada
+hostil. Uma borda que só aceita o que é válido reduz a superfície do que alcança
+o ERP, qualquer que seja esse estado — defesa em profundidade: cada camada
+protege a seguinte sem supor que a seguinte se protege. Nota técnica: o
+`URLSearchParams` (`erp/cliente.js:22-30`) faz *percent-encoding*, o que impede
+quebrar a estrutura da URL do ERP, mas não impede enviar um valor hostil dentro
+de um parâmetro bem-formado — o encoding protege o transporte, não o destino.
+
+**Sugestão — `QUERY` em vez de `GET` para a busca com filtros.** O método existe
+e é padrão desde a RFC 10008: seguro e idempotente como o `GET`, mas com corpo,
+o que resolve filtro que não cabe confortavelmente em query string e evita termo
+de busca em log de acesso e em histórico de navegador. Registro como
+possibilidade, não como recomendação para agora, por duas razões: os filtros
+daqui cabem folgadamente numa query string, e o suporte prático em
+infraestrutura intermediária (proxy, cache, CDN) ainda é irregular. Há também um
+custo concreto no projeto: a vitrine depende de a busca estar na URL — é o que
+torna o link compartilhável e o botão voltar funcional, decisão registrada no
+comentário de `Catalogo.jsx:9-13`. Trocar para `QUERY` entraria em conflito com
+isso.
 
 ---
 
