@@ -82,8 +82,12 @@ export async function lerCarrinho(usuarioId, db = obterBanco()) {
 
   const itens = await enriquecerItens(linhas);
 
+  // So o que da para comprar entra no total: o numero em destaque na tela e o
+  // que a pessoa vai pagar, e com um item bloqueado o checkout nem abre. O
+  // caminho "produto sumiu do catalogo" ja fazia isso, zerando valor_total la
+  // em cima; aqui a regra passa a valer para toda linha indisponivel.
   const totalCentavos = itens.reduce(
-    (soma, item) => soma + paraCentavos(item.valor_total),
+    (soma, item) => (item.disponivel ? soma + paraCentavos(item.valor_total) : soma),
     0,
   );
 
