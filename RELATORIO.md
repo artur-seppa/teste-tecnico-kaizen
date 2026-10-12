@@ -294,6 +294,45 @@ igual ao `adicionarItem`.
 | **Corrigi?** | **Não**, pelo mesmo motivo do Problema 6: não é dos chamados desta branch. A correção é trocar o literal por `config.erp.timeoutMs`. Vale discutir se a sonda deveria ter limite próprio e **menor** que o das requisições — não travar a subida por 8 s é defensável —, mas então ele precisa ser uma variável declarada, não um número solto no meio do arquivo. |
 | **Arquivos alterados** | nenhum |
 
+### Problema 8 — CPF aceita letras, e o valor sujo é gravado e enviado ao ERP
+
+| | |
+|---|---|
+| **O que está errado** | `validacao.js:125-135` limpa os não-dígitos **só para contar** e depois devolve a string original: `const digitos = texto.replace(/\D/g, ''); if (digitos.length !== 11 && ...) ...; return texto;`. Então `12345678901ab` tem 11 dígitos, passa na checagem, e é gravado **com as letras**. Os validadores vizinhos fazem o contrário: `cep()` devolve `12345-678` normalizado e `uf()` devolve a sigla em maiúscula. Só o `documento` valida o valor limpo e persiste o sujo. |
+| **Como cheguei nele** | Reportado por teste manual no Perfil: CPF correto seguido de duas letras aleatórias foi salvo. Confirmado no código em seguida. |
+| **Impacto** | O `documento` não fica só no banco: `pedidoService.js:52` o envia ao ERP como `cliente.documento` ao fechar o pedido. Documento malformado entra no sistema interno e no que vier dele — nota, cobrança, busca por cliente. Também quebra a identificação: o mesmo CPF com e sem sufixo vira duas strings diferentes, e nada no banco impede. |
+| **Corrigi?** | **Não** — fora do escopo do chamado desta branch. A correção tem duas partes: recusar entrada com caractere não permitido em vez de ignorá-lo, e devolver o valor normalizado (só dígitos, ou máscara fixa), como `cep()` e `uf()` já fazem. O `ARQUITETURA.md:269` registra "sem validação de dígito de CPF/CNPJ — só o tamanho", o que é decisão consciente e respeito; **aceitar letras é outra coisa** — não é falta de dígito verificador, é o validador contradizendo o próprio critério que usou para aprovar. |
+| **Arquivos alterados** | nenhum |
+
+### Problema 9 — Editar endereço pela API rebaixa o principal em silêncio
+
+| | |
+|---|---|
+| **O que está errado** | `routes/enderecos.js:35` monta `principal: lerBooleano(corpo.principal) ?? false`. Como `lerBooleano` devolve `null` tanto para campo ausente quanto para valor irreconhecível, `dados.principal` chega ao serviço **sempre** como booleano. Mas `enderecoService.js:84-86` foi escrito esperando o contrário: `dados.principal === undefined ? atual.principal : (...)`. O ramo que preservaria o valor atual é inalcançável, e um `PUT` sem o campo rebaixa o endereço principal a comum, respondendo `200`. |
+| **Como cheguei nele** | Auditando a criação e edição de endereço a pedido, depois do KZN-331. Reproduzido pela API real contra o backend em execução: criei conta e dois endereços, editei o principal sem enviar o campo e ele voltou com `principal=false`; enviei `"principal":"yes"` e também virou `false`, sem `422`. O usuário terminou **sem nenhum endereço principal**. |
+| **Impacto** | Ficar sem principal não é estado inócuo: `listarEnderecos` ordena por `principal DESC`, e o checkout (antes da correção do KZN-331) escolhia `find(principal) ?? enderecos[0]` — sem principal, o pedido ia para o endereço mais antigo. Os dois defeitos se somavam para entregar no lugar errado. A interface escapa porque o `FormularioEndereco` espalha `...endereco` e sempre reenvia o campo; é proteção acidental, não garantia do backend. |
+| **Corrigi?** | **Não** — fora do escopo do chamado. A correção tem três partes: um validador de booleano para corpo de requisição que devolva `undefined` quando ausente e acuse `422` quando inválido (sem mexer no `lerBooleano`, que também serve query string do catálogo, onde tolerância é adequada); tornar alcançável o ramo que preserva o valor atual; e proteger a invariante. |
+| **Arquivos alterados** | nenhum |
+
+**A invariante que falta.** `removerEndereco` (`:121-129`) promove o endereço mais
+antigo quando o principal é apagado, com o comentário *"para o checkout nunca
+ficar sem endereço padrão"*. `atualizarEndereco` cria exatamente esse estado.
+Duas funções do mesmo arquivo, regras opostas sobre a mesma regra de negócio.
+
+**O que não é defeito e vale registrar.** A UF **é** validada contra a lista das
+27 siglas (`validacao.js:149-165`), com normalização para maiúscula. Esse ponto
+está correto.
+
+**Sugestão, não defeito — CEP.** O `ARQUITETURA.md:267-268` já declara que o CEP
+valida só formato e que integrar o ViaCEP para preencher o endereço "seria uma
+melhoria natural". Concordo, e acrescento o que o documento não menciona: hoje
+**nada verifica a coerência entre CEP, cidade e UF**. É possível cadastrar CEP de
+São Paulo com `uf: DF` e bairro de outra cidade, e o sistema aceita — encontrei
+esse caso nos dados de desenvolvimento. Preencher a partir do CEP resolve os dois
+de uma vez: tira o trabalho de digitação e elimina a divergência por construção.
+Num sistema cujo chamado de maior prioridade é entrega no endereço errado, isso
+deixa de ser conveniência e vira integridade do dado.
+
 ---
 
 ## 4. Múltiplos carrinhos
