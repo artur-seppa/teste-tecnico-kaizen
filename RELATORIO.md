@@ -360,6 +360,108 @@ de uma vez: tira o trabalho de digitação e elimina a divergência por constru�
 Num sistema cujo chamado de maior prioridade é entrega no endereço errado, isso
 deixa de ser conveniência e vira integridade do dado.
 
+### Problema 10 — A última página do catálogo é inalcançável pelo botão "Próxima"
+
+| | |
+|---|---|
+| **O que está errado** | `ui.jsx`, componente `Paginacao`: o botão "Próxima" usa `disabled={pagina >= totalPaginas - 1}`. O limite é `totalPaginas`, não `totalPaginas - 1`. Com 5 páginas, o botão desabilita ao chegar na 4; com 2 páginas — o menor caso em que a paginação aparece, já que ela se esconde com `total_paginas <= 1` — ele nasce desabilitado e a página 2 nunca é alcançada. O botão "Anterior" ao lado usa `pagina <= 1`, que está correto. |
+| **Como cheguei nele** | Lendo o componente de paginação durante o KZN-325, porque a correção mexe em quem decide a página. Confirmado com um teste descartável montando `Paginacao` direto: com 2 páginas o botão nasce desabilitado; com 5, trava na 4. |
+| **Impacto** | É o mesmo prejuízo do chamado por outro caminho: peça que existe e não aparece. A última página de **toda** listagem fica fora do alcance da navegação. Silencioso, ainda por cima: botão desabilitado parece fim de lista, não defeito. |
+| **Corrigi?** | **Não** — não é o chamado desta branch, e misturar deixaria o commit contando duas histórias. A correção é trocar o limite por `pagina >= totalPaginas` e cobrir com teste o caso de duas páginas, que é onde o erro é total e não parcial. |
+| **Arquivos alterados** | nenhum |
+
+**Em "Meus pedidos" não há contorno.** A vitrine guarda a página na URL, então
+dá para digitar `?pagina=3` e escapar do botão. `Pedidos.jsx:9` guarda a página
+em `useState`: não existe URL para forçar. Quem tiver mais de dez pedidos não
+alcança os mais antigos por nenhum caminho da interface — o botão é a única
+porta, e ela está trancada uma página antes do fim.
+
+Confirmei com o banco de desenvolvimento populado até três páginas: a listagem
+pelo service responde `total_paginas: 3` e a tela trava na página 2.
+
+**O defeito do KZN-325 não se repete nos pedidos, e por construção.**
+`Pedidos.jsx` não tem filtro nenhum e a página não vive na URL. Sem filtro que
+troque o resultado, não existe a situação em que a posição antiga deixa de
+valer. A causa raiz do chamado é específica da vitrine; o que as duas telas
+compartilham é o componente de paginação.
+
+**Dois pontos menores na mesma tela**, que não classifico como defeito:
+
+1. `Pedidos.jsx:42` — lista vazia sempre diz "Você ainda não fez pedidos". Numa
+   página vazia a frase mente, e a paginação some junto, porque o `return` vem
+   antes dela. Hoje é latente: o botão quebrado impede chegar lá. Corrigido o
+   botão, o caminho abre. É o mesmo mal-entendido do KZN-325 — página vazia
+   tratada como coleção vazia.
+2. `Pedidos.jsx:36` — trocar de página substitui a lista inteira por
+   "Carregando seus pedidos...". É incômodo, não incorreção.
+
+### Problema 11 — A borda do catálogo não valida nada e terceiriza a validação ao ERP
+
+| | |
+|---|---|
+| **O que está errado** | `routes/catalogo.js:20-30` repassa `busca`, `categoria` e `marca` crus para o ERP. Só `pagina`, `tamanho` e `somente_disponiveis` passam por alguma leitura (`lerPaginacao`, `lerBooleano`), e mesmo essas não recusam nada: corrigem em silêncio. Não há tipo, tamanho, formato nem conjunto de valores aceitos. Quem recusa entrada inválida é o ERP. |
+| **Como cheguei nele** | Perguntado durante a revisão do KZN-325, verificado contra a loja em execução. |
+| **Impacto** | Três consequências, em ordem de gravidade. **(1)** `categoria=XPTO` devolve `200` com lista vazia, e a tela diz "Nenhuma peça encontrada" — o mesmo mal-entendido do KZN-325, vazio confundido com inexistente. Uma categoria inválida não é uma busca sem resultado: é uma pergunta malformada, e merece `422`. **(2)** `busca` com 5000 caracteres é recusada — **pelo ERP**, com `422 "Filtros invalidos."`, e a mensagem dele atravessa a loja e chega ao cliente. A loja depende de um terceiro para validar a própria entrada, e vaza o vocabulário desse terceiro. **(3)** `somente_disponiveis=banana` é ignorado: `lerBooleano` devolve `null`, o filtro não é aplicado e a resposta é `200` com tudo. A pessoa pediu "só com estoque", recebeu o catálogo inteiro e nada avisou. É o mesmo defeito de fundo do Problema 9. |
+| **Corrigi?** | **Não** — fora do escopo do chamado. A correção é validar na borda, como `routes/pedidos.js` e `routes/enderecos.js` já fazem com o corpo: `busca` como texto opcional com tamanho máximo; `categoria` e `marca` contra a lista que o ERP conhece (`GET /produtos/categorias` já existe e o catálogo já a consome); booleano de query que acuse valor irreconhecível em vez de engolir. O `ColetorDeErros` do `validacao.js` já faz exatamente isso para corpo — falta a versão para query. |
+| **Arquivos alterados** | nenhum |
+
+**`categoria` deveria ser um conjunto fechado.** É o ponto mais barato de todos:
+a lista de categorias válidas já é servida pelo próprio backend em
+`/api/catalogo/categorias`, que a vitrine usa para montar os botões de filtro. O
+mesmo dado que desenha a interface deveria governar a validação — e hoje não
+governa nada. O `uf()` do `validacao.js:149-165` já é esse padrão, validando
+contra as 27 siglas; falta aplicá-lo aqui.
+
+**`marca` é filtro morto.** O ERP suporta (`?marca=Cofap` devolve exatamente os
+produtos da Cofap), a loja repassa, e **nenhuma tela do front envia**. Procurei:
+`marca` aparece no `CardProduto` e na página de produto, só como texto exibido.
+É um filtro alcançável apenas chamando a API diretamente. Ou a vitrine ganha o
+filtro de marca — e aí ele precisa de validação como a categoria —, ou o
+parâmetro sai da rota. Mantê-lo sem uso e sem validação é o pior dos três.
+
+**Sobre SQL injection: não há, e não é por sorte.** Verifiquei o backend inteiro.
+Toda consulta usa *prepared statement* do `better-sqlite3` com parâmetros
+ligados (`?` posicional ou `@nome`); não existe uma única query montada por
+concatenação ou template string. O único `db.exec()` com variável
+(`db/index.js:23`) recebe o `schema.sql` lido do disco, não entrada de usuário.
+Testei `?busca=' OR 1=1--` e a resposta foi `200` com zero resultados — o texto
+foi tratado como texto. Some-se a isso que o catálogo **nem toca no banco**: ele
+conversa com o ERP, e os parâmetros vão por `URLSearchParams`
+(`erp/cliente.js:22-30`), que escapa o valor, então também não dá para injetar
+parâmetro na URL do ERP.
+
+A ressalva honesta: isso protege contra injeção, **não** contra entrada inválida.
+São problemas diferentes, e o segundo é o que está aberto. Dado não validado que
+não quebra o banco ainda produz resposta errada, mensagem errada e, no caso do
+`documento` (Problema 8), dado sujo persistido e enviado ao ERP.
+
+**O ERP é caixa-preta, e isso reforça a borda em vez de dispensá-la.** Não
+conhecemos o interior do ERP e não o testamos — procurar falha em sistema de
+terceiro, compartilhado com outros candidatos e sem autorização, está fora do
+escopo deste teste. A conclusão "sem injeção" acima vale para o **código da
+loja**, não para o que está atrás dela. Justamente por não sabermos como o ERP
+trata o que recebe, a loja não pode terceirizar a ele a validação da entrada:
+hoje `busca`, `categoria` e `marca` chegam crus na porta de um sistema cujo
+estado interno desconhecemos, e a loja seria o veículo de qualquer entrada
+hostil. Uma borda que só aceita o que é válido reduz a superfície do que alcança
+o ERP, qualquer que seja esse estado — defesa em profundidade: cada camada
+protege a seguinte sem supor que a seguinte se protege. Nota técnica: o
+`URLSearchParams` (`erp/cliente.js:22-30`) faz *percent-encoding*, o que impede
+quebrar a estrutura da URL do ERP, mas não impede enviar um valor hostil dentro
+de um parâmetro bem-formado — o encoding protege o transporte, não o destino.
+
+**Sugestão — `QUERY` em vez de `GET` para a busca com filtros.** O método existe
+e é padrão desde a RFC 10008: seguro e idempotente como o `GET`, mas com corpo,
+o que resolve filtro que não cabe confortavelmente em query string e evita termo
+de busca em log de acesso e em histórico de navegador. Registro como
+possibilidade, não como recomendação para agora, por duas razões: os filtros
+daqui cabem folgadamente numa query string, e o suporte prático em
+infraestrutura intermediária (proxy, cache, CDN) ainda é irregular. Há também um
+custo concreto no projeto: a vitrine depende de a busca estar na URL — é o que
+torna o link compartilhável e o botão voltar funcional, decisão registrada no
+comentário de `Catalogo.jsx:9-13`. Trocar para `QUERY` entraria em conflito com
+isso.
+
 ---
 
 ## 4. Múltiplos carrinhos
