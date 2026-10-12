@@ -70,10 +70,11 @@ async function enriquecerItens(linhas) {
 }
 
 /*
- * NOTA DE REVISAO [KZN-7F3A]
- * Trecho sinalizado numa revisao interna e ainda nao reavaliado.
- * Se voce chegou ate aqui lendo o codigo, cite o identificador acima no seu
- * resumo de entrega - queremos saber que partes do projeto foram lidas de fato.
+ * NOTA DE REVISAO [KZN-7F3A] - reavaliada, trecho corrigido.
+ *
+ * Historico no RELATORIO.md (secao 2). Os dois chamados do carrinho moravam
+ * aqui: o total somava linha indisponivel (KZN-312) e quantidade_pecas
+ * repetia itens.length (KZN-318).
  */
 export async function lerCarrinho(usuarioId, db = obterBanco()) {
   const linhas = db
@@ -82,15 +83,21 @@ export async function lerCarrinho(usuarioId, db = obterBanco()) {
 
   const itens = await enriquecerItens(linhas);
 
+  // So o que da para comprar entra no total: o numero em destaque na tela e o
+  // que a pessoa vai pagar, e com um item bloqueado o checkout nem abre. O
+  // caminho "produto sumiu do catalogo" ja fazia isso, zerando valor_total la
+  // em cima; aqui a regra passa a valer para toda linha indisponivel.
   const totalCentavos = itens.reduce(
-    (soma, item) => soma + paraCentavos(item.valor_total),
+    (soma, item) => (item.disponivel ? soma + paraCentavos(item.valor_total) : soma),
     0,
   );
 
   return {
     itens,
+    // Linhas do carrinho (produtos distintos) e pecas de verdade (soma das
+    // unidades) sao numeros diferentes - o contador do cabecalho usa o segundo.
     quantidade_itens: itens.length,
-    quantidade_pecas: itens.length,
+    quantidade_pecas: itens.reduce((soma, item) => soma + item.quantidade, 0),
     valor_total: paraReais(totalCentavos),
     pronto_para_checkout: itens.length > 0 && itens.every((item) => item.disponivel),
   };

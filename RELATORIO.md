@@ -69,12 +69,21 @@ que o cliente descreveu.
 
 | | |
 |---|---|
-| **Causa** | |
-| **Como reproduzi** | |
-| **Arquivos alterados** | |
-| **Como validei a correção** | |
+| **Causa** | `carrinhoService.js:85` somava `valor_total` de **todos** os itens, inclusive os marcados `disponivel: false`. A intenção de não somar indisponível já existia no arquivo — o caminho "produto sumiu do catálogo" (`:41`) devolve `valor_total: 0` —, mas não valia para o item sem estoque (`:64`), que mantém o valor cheio. Não é decisão de produto: são dois caminhos de indisponibilidade com tratamento divergente dentro da mesma função. |
+| **Como reproduzi** | `ARR-7002` (Radiador de Agua sem Ar, R$ 684,00, estoque 0) é o item do chamado — o valor bate exatamente com o relato do atendimento. Pela interface ele é inalcançável: `adicionarItem` barra com `409 ESTOQUE_INSUFICIENTE`. O cenário só nasce de um jeito: a peça entra quando há estoque e a baixa vem depois. Simulei inserindo a linha direto em `carrinho_itens`, que é o estado em que o banco ficaria. Com 2× ARR-7001 e 3× ARR-7003 ao lado, as linhas somavam R$ 507,10 e o rodapé exibia R$ 1.191,10. |
+| **Arquivos alterados** | `backend/src/services/carrinhoService.js` |
+| **Como validei a correção** | Teste de unidade do service com o ERP mockado (`test/carrinhoService.test.js`), mais verificação contra o banco e o ERP reais. Confirmei que o teste **falha** quando reverto a correção — 4 dos 19 ficam vermelhos. |
 
 *Alguma observação? (algo que te surpreendeu, decisão que precisou tomar)*
+
+O que me fez tratar isso como defeito, e não como decisão de produto, foi o botão: `pronto_para_checkout` já era `false` e "Fechar pedido" já vinha desabilitado. Ou seja, **R$ 1.191,10 não era o preço de nenhum pedido que existisse** — o pedido possível custava R$ 507,10. O número em destaque descrevia uma compra impossível.
+
+Duas decisões que o enunciado não responde:
+
+- **Linha com estoque parcial sai inteira do total** (pediu 5, tem 2 → zero no total). É o mesmo critério que `pronto_para_checkout` já usa para bloquear a linha. A alternativa — somar as 2 que existem — descreveria um carrinho que a pessoa ainda não tem, e ela precisaria editar a quantidade antes de fechar.
+- **A linha indisponível continua visível, com o preço dela.** Saber quanto custa o radiador é informação útil para quem decide se espera a reposição. O que muda é só a participação no total.
+
+Sobre os 30 minutos do README: vale ser preciso, porque é fácil contar errado. **A loja não guarda estoque nem faz cache** — `enriquecerItens` chama o ERP uma vez por item a cada leitura do carrinho. Quem pode estar defasado é o dado **dentro do ERP**, que sincroniza com o estoque físico a cada 30 min. A loja sempre mostra o número mais recente que o ERP tem; esse número é que pode estar atrás da prateleira.
 
 
 
@@ -82,10 +91,14 @@ que o cliente descreveu.
 
 | | |
 |---|---|
-| **Causa** | |
-| **Como reproduzi** | |
-| **Arquivos alterados** | |
-| **Como validei a correção** | |
+| **Causa** | `carrinhoService.js:88` devolvia `quantidade_pecas: itens.length` — o mesmo valor de `quantidade_itens`, que está logo acima. O campo prometia peças e entregava linhas. O front está correto e não foi tocado: `Cabecalho.jsx:94-100` já lia `quantidade_pecas`, o campo certo; ele só recebia o número errado do servidor. |
+| **Como reproduzi** | Carrinho com 2 produtos distintos e 5 + 2 = 7 unidades: o badge mostrava 2. É o relato literal do chamado ("mostra 2, mas eu tenho 7 peças"). |
+| **Arquivos alterados** | `backend/src/services/carrinhoService.js` |
+| **Como validei a correção** | Teste do service (backend) e teste de componente do `Cabecalho` renderizando com `ProvedorAuth` + `ProvedorCarrinho` reais (frontend). Verifiquei que o teste de front falha se o badge voltar a ler `quantidade_itens`. |
+
+**O chamado subestima o alcance.** O relato fala do ícone, mas `quantidade_pecas` alimenta também o "Itens" do resumo do carrinho (`Carrinho.jsx:147`). São dois lugares na tela, não um — e a correção no servidor acerta os dois de uma vez, sem mudar uma linha do front.
+
+**Decisão:** o contador inclui as peças da linha indisponível. Ele responde "quantas peças tem aí dentro", não "quantas dá para levar" — se o radiador sumisse da contagem, a pessoa acharia que perdeu o item do carrinho.
 
 
 
@@ -169,16 +182,86 @@ publicado no repositório. O commit base (`main`) preserva o estado como recebid
 | | |
 |---|---|
 | **O que está errado** | Dois defeitos no mesmo fluxo. **(a)** `routes/perfil.js:30-34` exige `nome` e `documento` em toda chamada (`telefone` é opcional) — enviar só `{"telefone":"..."}` devolve `422` cobrando os outros dois. Mas `services/usuarioService.js:86-88` já faz merge (`nome ?? atual.nome`), ou seja, o serviço foi escrito esperando campos ausentes: a rota contradiz o próprio serviço. **(b)** O telefone usa `telefone \|\| atual.telefone`, enquanto nome e documento usam `??`. Com `\|\|`, mandar `null`, `""` ou omitir cai de volta no valor atual — **não existe forma de apagar um telefone já cadastrado**, e a API responde `200` como se tivesse salvo. |
-| **Como cheguei nele** | Testando o formato de erro de payload da rota (seção 5). Enviei `{"telefone":"11988887777"}` esperando sucesso e recebi `422` cobrando `nome` e `documento`; fui ao serviço entender e encontrei o merge já pronto. Para (b), gravei um telefone e tentei apagá-lo com `null`, com `""` e omitindo o campo: os três devolveram `200` e o número permaneceu. |
-| **Impacto** | Baixo hoje: o front envia o formulário inteiro, então o caminho de uso real funciona. O contrato é que está errado — `PATCH` promete atualização parcial e entrega semântica de substituição. Morde quando aparecer um segundo consumidor (app, script, integração) que mande só o campo alterado. O telefone não-apagável afeta quem cadastrou o número errado e quer removê-lo em vez de trocar. |
+| **Como cheguei nele** | Testando o formato de erro de payload da rota (seção 5). Enviei `{"telefone":"11988887777"}` esperando sucesso e recebi `422` cobrando `nome` e `documento`; fui ao serviço entender e encontrei o merge já pronto. Para (b), gravei um telefone e tentei apagá-lo com `null`, com `""` e omitindo o campo: os três devolveram `200` e o número permaneceu. **Depois foi reproduzido pela própria interface**, apagando o campo na tela de Perfil e salvando — ver abaixo. |
+| **Impacto** | **(a)** é defeito apenas de contrato e não afeta o uso atual, porque o front envia o formulário inteiro. O problema aparece quando surgir um segundo consumidor (app, script, integração) que mande só o campo alterado. **(b) é diferente: quebra o uso normal da tela.** Apagar o telefone no formulário de Perfil e salvar devolve `200`, e o número continua lá. Quem cadastrou o número errado e quer apenas removê-lo não consegue — só trocar por outro. Nada no banco impede: `schema.sql:19` declara `telefone TEXT` sem `NOT NULL`. |
 | **Corrigi?** | **Não.** O enunciado pede para anotar como dúvida o que pode ser decisão de produto, e (a) depende de uma escolha que não é minha: como expressar "limpar o campo". O `textoOpcional` colapsa `undefined`, `null` e `""` no mesmo `null`, então tornar os campos opcionais sem antes decidir isso trocaria um defeito por outro — "ausente" passaria a significar "apague". A correção certa é: campos opcionais, `undefined` = não mexe, `null` explícito = limpa (convenção do JSON Merge Patch, RFC 7396), e `??` em vez de `\|\|` no telefone. Mudar `PATCH` para `PUT` **não** resolveria: o perfil inclui `email`, `id` e `criado_em`, e o e-mail é deliberadamente não editável, então um corpo de PUT nunca seria a representação completa que o verbo exige. |
 | **Arquivos alterados** | nenhum |
+
+**A cadeia do (b), camada por camada.** Vale escrever porque a causa não está onde
+a rota aponta:
+
+| Camada | O que acontece |
+|---|---|
+| Tela | `Perfil.jsx:16` inicializa o campo com `usuario.telefone ?? ''`; apagar e salvar envia `""` |
+| Rota | `routes/perfil.js:33` chama o validador `telefone(...)` |
+| Validador | `validacao.js:167` delega a `textoOpcional`, que devolve `null` para `undefined`, `null` **e** `""` |
+| Serviço | `usuarioService.js:87` faz `telefone \|\| atual.telefone` — `null` é falsy, o número antigo volta |
+| Banco | `schema.sql:19` aceitaria `NULL` sem reclamar |
+
+A tela responde `200` e mostra o número de volta. Nenhuma camada recusa a
+operação; ela simplesmente não acontece.
+
+**Mesmo assim mantive sem corrigir**, por coerência com o resto desta entrega:
+é fora do escopo dos chamados abertos, e as duas metades do problema vivem na
+mesma função. Trocar só o `\|\|` por `??` resolveria o telefone e deixaria `nome` e
+`documento` com a semântica de substituição — meia correção, que esconde a outra
+metade em vez de resolvê-la. Prefiro o registro inteiro aqui a um remendo que
+tira o sintoma mais visível de cena.
 
 Verifiquei as outras rotas e **este é o único caso divergente**:
 `PATCH /carrinho/itens/:codigo` pede só `quantidade`, que é o único campo mutável
 do item; `PUT /enderecos/:id` exige a representação completa, que é o correto
 para PUT; `PATCH /perfil/senha` é ação, não edição parcial de recurso; e os
 `POST` exigem tudo por serem criação.
+
+### Problema 6 — A borda do carrinho aceita em silêncio o que deveria recusar
+
+| | |
+|---|---|
+| **O que está errado** | `adicionarItem` (`carrinhoService.js:124`) faz `Math.min(MAXIMO_POR_ITEM, existente + quantidade)` **antes** da checagem de estoque da linha 126. O estoque até é conferido — mas contra o valor já cortado, não contra o que a pessoa pediu. Com 90 no carrinho e mais 50 pedidos: `min(99, 140) = 99`, a checagem pergunta "tem 99?", tem, passa, e a linha 137 grava 99. Resposta `201`, **41 unidades somem sem uma palavra**. Sem o `Math.min` ali, a pergunta seria "tem 140?" e a resposta seria `409 ESTOQUE_INSUFICIENTE`. A rota não cobre: ela valida a parcela (`quantidade` ≤ 99), não a soma. |
+| **Como cheguei nele** | Conferindo onde a quantidade é validada, ao escrever os testes do KZN-312. Verifiquei com um teste descartável: 90 + 50 → 99, sem erro. |
+| **Impacto** | Baixo em volume, real em confiança. Uma oficina montando orçamento grande pede 140 unidades, recebe confirmação e leva 99 — descobre na entrega. É o oposto do que o resto do service faz: estoque insuficiente vira `409` explícito, com `estoque_disponivel` nos detalhes. Não produz erro em tela e nenhum cliente consegue reportar com precisão. |
+| **Corrigi?** | **Ainda não.** Está fora do escopo dos dois chamados desta branch, e a correção tem uma escolha de produto embutida: recusar com `409 LIMITE_POR_ITEM` (coerente com o tratamento de estoque) ou aceitar o corte e informar, devolvendo quanto de fato entrou. Prefiro o `409`, pelo mesmo motivo do KZN-312: a resposta não pode afirmar algo diferente do que aconteceu. |
+| **Arquivos alterados** | nenhum |
+
+**Observação — a mesma postura aparece em `alterarQuantidade`, por outro caminho.**
+
+`buscarProduto` tem três desfechos, não dois: devolve o produto, **lança** `ApiError`
+(404, 401, 5xx, timeout), ou devolve `null` — este último quando o ERP responde
+`200` sem `dados`, caso de proxy devolvendo HTML, gateway vazio ou deploy pela
+metade (`erp/cliente.js`, `return json?.dados ?? null`).
+
+Diante desse `null`, as duas funções decidem o contrário uma da outra:
+
+- `adicionarItem:113` → `if (!produto) throw ApiError.naoEncontrado(...)` — recusa.
+- `alterarQuantidade:171` → `if (produto && produto.estoque < quantidade)` — o
+  `&&` curto-circuita, o `if` não entra, e a linha 180 grava a quantidade **sem
+  ter conferido estoque nenhum**.
+
+Confirmei com teste descartável: mockando `buscarProduto` para devolver `null`,
+a quantidade foi para 99 e a chamada respondeu sucesso.
+
+**O alcance é limitado** — e vale registrar, para não superdimensionar: a leitura seguinte do
+carrinho marca a linha como indisponível e `pronto_para_checkout` fica `false`,
+então nenhum pedido ruim passa. O que se perde é o momento e o rótulo do erro:
+a pessoa recebe `200`, e só na tela seguinte vê o item bloqueado com uma
+mensagem que fala de catálogo quando o que houve foi uma resposta malformada do ERP.
+
+A assimetria preocupa mais que o sintoma. Diante da mesma incerteza, um
+caminho recusa e o outro deixa passar — não dá para ler o código e saber qual é
+a regra da casa. É o mesmo tipo de divergência interna que produziu o KZN-312.
+Correção: `if (!produto) throw ApiError.naoEncontrado(...)` antes da checagem,
+igual ao `adicionarItem`.
+
+### Problema 7 — `verificarErp` ignora o `ERP_TIMEOUT_MS`
+
+| | |
+|---|---|
+| **O que está errado** | `erp/cliente.js:144` usa `AbortSignal.timeout(3000)` fixo. Todo o resto do cliente respeita `config.erp.timeoutMs`; só a sonda de inicialização não. A variável existe, está documentada no `.env.example` e não vale para o único ponto que fala com o ERP antes de qualquer cliente aparecer. |
+| **Como cheguei nele** | O backend subiu imprimindo `ERP: ... -> INDISPONIVEL (timeout)` com o ERP de pé. Medi: `curl` respondeu em 0,97 s e o `fetch` do Node em 34–412 ms em quatro tentativas. O ERP estava normal; foi o primeiro acesso, com DNS e TLS frios, esbarrando num limite mais apertado que o configurado. |
+| **Impacto** | Nenhum para quem compra — a sonda não derruba o processo e a aplicação funciona. O dano é de diagnóstico: quem sobe o projeto lê "INDISPONIVEL" e investiga um problema de rede que não existe, ou assume que o ambiente está quebrado e interrompe o trabalho. O aviso aponta para o lugar errado. |
+| **Corrigi?** | **Não**, pelo mesmo motivo do Problema 6: não é dos chamados desta branch. A correção é trocar o literal por `config.erp.timeoutMs`. Vale discutir se a sonda deveria ter limite próprio e **menor** que o das requisições — não travar a subida por 8 s é defensável —, mas então ele precisa ser uma variável declarada, não um número solto no meio do arquivo. |
+| **Arquivos alterados** | nenhum |
 
 ---
 
@@ -226,18 +309,90 @@ decisão pensada.*
 
 ## 5. Como testei
 
-*O que você fez para confirmar que funciona e que não quebrou nada. Teste
-manual conta — descreva o caminho que percorreu.*
+**Manual, antes de tocar no código.** Subi backend e front, montei o carrinho do
+chamado (2× ARR-7001, 3× ARR-7003, 1× ARR-7002 sem estoque) e conferi na tela:
+linhas somando R$ 507,10, rodapé exibindo R$ 1.191,10, badge em 3 com 6 peças
+dentro. Reproduzi antes de diagnosticar — o relato do suporte podia não bater
+com a causa, e nesse caso batia.
 
+**Automatizado, 30 testes em Vitest.** A escolha e o porquê estão na seção 6.
+A separação por camada é a parte que importa:
 
+| Arquivo | O que afirma | Dependência externa |
+|---|---|---|
+| `backend/test/carrinhoService.test.js` | regra de negócio do carrinho | ERP mockado (`vi.mock`) |
+| `backend/test/erpCliente.test.js` | tradução de HTTP em `ApiError` | `fetch` stubado |
+| `frontend/test/Cabecalho.test.jsx` | o que aparece na tela | módulo `api` mockado |
+| `frontend/test/apiCliente.test.js` | tradução de HTTP em `ErroApi` | `fetch` stubado |
+
+O teste do service não passa pelo `erp/cliente.js`: se a tradução de erro
+quebrar, quem fica vermelho é o arquivo dela, não o do carrinho. Falha que
+aponta o culpado errado custa mais caro do que a que não existe.
+
+**Teste verde não prova nada sozinho.** Escrevi os testes do KZN-312 e do
+KZN-318 antes da correção e vi os quatro falharem pelo motivo previsto
+(1191,10 ≠ 507,10 e 2 ≠ 5). Depois de migrar para Vitest e trocar o fake por
+mock, repeti a prova com mutações no código de produção, porque mock mal feito
+é o jeito mais fácil de produzir teste que passa sempre:
+
+| Mutação | Resultado |
+|---|---|
+| Correção do total revertida | 4 falham |
+| Tratamento de 401 do ERP desligado | 1 falha |
+| Badge lendo `quantidade_itens` | 2 falham |
+| `credentials: 'include'` → `'omit'` | 1 falha |
+
+**Confirmação contra o ambiente real.** Chamei `lerCarrinho` apontando para o
+banco de desenvolvimento e o ERP de verdade: R$ 507,10, badge 6, radiador ainda
+visível com R$ 684,00 e `pronto_para_checkout: false`. Mock pode mentir sobre o
+formato que o ERP devolve; essa passagem fecha a brecha.
+
+**O que confirmei que não quebrou:** o checkout só abre com todas as linhas
+disponíveis, então `valor_total` ali não muda de valor. `pedidoService` usa
+`carrinho.itens`, que não foi alterado, e o valor do pedido vem do ERP
+(`pedidoErp.valor_total`), não da loja. Nenhuma mudança no front.
 
 *Se escreveu testes automatizados, diga como rodar:*
+
+```bash
+cd backend  && npm test   # 19 testes
+cd frontend && npm test   # 11 testes
+```
+
+`npm run test:watch` nos dois para o modo interativo.
 
 
 
 ---
 
 ## 6. Decisões e suposições
+
+**Vitest, e não `node:test`.** Comecei com `node:test` para não trazer
+dependência nova, e a primeira versão do teste ficou assim: quatro linhas de
+`process.env` no corpo do arquivo e `await import()` no lugar dos imports do
+topo. `config.js` lê o ambiente na importação, e eu não tinha como interceptar
+isso. O contorno existia por limitação da ferramenta e vazava para dentro do
+teste.
+
+Vitest resolve com `env` no config, e os imports voltam ao topo. Pesou também
+que **o front já é Vite** — não é ferramenta estrangeira ao repositório — e que
+`node:test` não testa React, enquanto metade do que falta investigar (KZN-325,
+a vitrine de múltiplos carrinhos) vive lá.
+
+**Mock, não fake.** A primeira versão subia um servidor HTTP falso e passava
+pelo `erp/cliente.js` inteiro. Testava mais do que deveria: falha na tradução
+de erro deixava vermelho o teste do carrinho. Troquei por `vi.mock` do cliente
+no teste do service, e o `fetch` stubado ficou no teste do cliente, que é quem
+tem essa responsabilidade. Mesma decisão no front.
+
+**Faker só no que o teste não afirma.** Descrição, marca, aplicação, nome e
+e-mail vêm do faker com `seed` fixa. Preço, estoque e quantidade são sempre
+explícitos: se o faker sorteasse o preço, a asserção do total viraria a fórmula
+do código copiada para dentro do teste — passaria mesmo com a soma errada.
+
+**O `ERP_URL` dos testes aponta para `127.0.0.1:1`**, endereço que não responde.
+Não é enfeite: se algum teste escapar do mock e tentar sair para a rede, ele
+falha na hora em vez de bater no ERP compartilhado com os outros candidatos.
 
 *Algo que o enunciado não respondia e você assumiu? Registre aqui.*
 
@@ -288,9 +443,18 @@ padrão de acumular problemas antes de lançar.
    o copiar para o próprio `.env` volta ao ponto de partida. A rotação é do lado
    da Kaizen; deste lado, uma lista de recusa de segredos conhecidos cobriria o
    intervalo até ela acontecer.
-2. **Suíte de testes com `node:test`**, começando por login, posse de pedido e
-   de endereço, e checkout com estoque insuficiente — os pontos onde uma
-   regressão vira vazamento de dado entre usuários.
+2. **Ampliar a suíte** para login, posse de pedido e de endereço, e checkout com
+   estoque insuficiente — os pontos onde uma regressão vira vazamento de dado
+   entre usuários. O que existe hoje cobre o carrinho e os dois clientes HTTP;
+   o resto do backend não tem teste nenhum.
+
+   Falta também **teste de integração das rotas** (app real + banco em memória,
+   ERP mockado), que é onde se verifica autenticação, formato de erro e
+   isolamento por `usuario_id` — coisas que teste de unidade de service não
+   alcança. E **e2e com Playwright**, com uma ressalva séria: e2e que chega ao
+   "Fechar pedido" cria pedido de verdade no SIAC e dá baixa em estoque
+   compartilhado com os outros candidatos. Ou aponta para um ERP falso local,
+   ou para um passo antes do checkout.
 3. **Validação de requisição com schema declarativo (zod)** no backend inteiro,
    com adaptador para o `ApiError` atual. Detalhado na seção 6.
 4. **Especificação OpenAPI (Swagger) da API.** O `ARQUITETURA.md` documenta os
@@ -312,7 +476,7 @@ padrão de acumular problemas antes de lançar.
    tabela em prosa que existe hoje. Só vale se nascer junto de um teste que
    falhe quando o código e a spec divergirem.
 5. **Cache de leitura do ERP.** Hoje cada leitura de carrinho faz uma chamada
-   por item (`carrinhoService.js:18-21`) e `GET /pedidos` faz N chamadas por
+   por item (`carrinhoService.js:24-32`) e `GET /pedidos` faz N chamadas por
    página (`pedidoService.js:117`) — o próprio `ARQUITETURA.md` registra os dois
    como limitação aceita. Catálogo e dados de produto são o caso fácil: mudam
    pouco e o README diz que o estoque do ERP se atualiza a cada 30 minutos, o
@@ -326,10 +490,19 @@ padrão de acumular problemas antes de lançar.
 
 ## 8. Outras observações
 
-**Marcadores de revisão encontrados no código:** `KZN-2B9C` (`backend/src/config.js`).
-O bloco pedia que o identificador fosse citado aqui. O trecho que ele sinalizava
-era o `PADRAO` com os segredos embutidos — tratado no Problema 1. Mantive o
-comentário no arquivo, reescrito para registrar o que foi reavaliado.
+**Marcadores de revisão encontrados no código.** Três até agora, todos citados
+aqui como o bloco pede:
+
+| Marcador | Arquivo | O que havia ali |
+|---|---|---|
+| `KZN-2B9C` | `backend/src/config.js` | `PADRAO` com os segredos embutidos — Problema 1 |
+| `KZN-7F3A` | `backend/src/services/carrinhoService.js` | `lerCarrinho`, onde moravam os dois defeitos do KZN-312 e do KZN-318 |
+| `KZN-5D1E` | `frontend/src/componentes/Cabecalho.jsx` | o badge do carrinho — aqui o código estava **certo**, lendo `quantidade_pecas`; o número errado vinha do servidor |
+
+Mantive os comentários nos arquivos, reescritos para registrar o que foi
+reavaliado. O `KZN-5D1E` vale como resultado negativo: marcador de revisão
+aponta trecho que merece um olhar, não trecho que está necessariamente errado —
+e nesse a investigação terminou do outro lado da fronteira.
 
 **Organização do histórico.** `main` tem um commit único com o projeto
 exatamente como recebido (60 arquivos), para servir de marco zero. As alterações
@@ -402,7 +575,7 @@ perde o que montou.
 
 O que fica em aberto é a **pré-validação**, que é pessimista. Três pontos
 recusam com base em dado possivelmente velho — `adicionarItem`
-(`carrinhoService.js:119`), `alterarQuantidade` (`:164`) e
+(`carrinhoService.js:126`), `alterarQuantidade` (`:171`) e
 `pronto_para_checkout` (`:95`). Se o estoque está defasado para menos, a loja
 recusa uma venda que o ERP aceitaria, e o cliente não tem como insistir: vê
 "sem estoque" numa peça que existe e desiste.
