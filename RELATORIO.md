@@ -182,10 +182,31 @@ publicado no repositório. O commit base (`main`) preserva o estado como recebid
 | | |
 |---|---|
 | **O que está errado** | Dois defeitos no mesmo fluxo. **(a)** `routes/perfil.js:30-34` exige `nome` e `documento` em toda chamada (`telefone` é opcional) — enviar só `{"telefone":"..."}` devolve `422` cobrando os outros dois. Mas `services/usuarioService.js:86-88` já faz merge (`nome ?? atual.nome`), ou seja, o serviço foi escrito esperando campos ausentes: a rota contradiz o próprio serviço. **(b)** O telefone usa `telefone \|\| atual.telefone`, enquanto nome e documento usam `??`. Com `\|\|`, mandar `null`, `""` ou omitir cai de volta no valor atual — **não existe forma de apagar um telefone já cadastrado**, e a API responde `200` como se tivesse salvo. |
-| **Como cheguei nele** | Testando o formato de erro de payload da rota (seção 5). Enviei `{"telefone":"11988887777"}` esperando sucesso e recebi `422` cobrando `nome` e `documento`; fui ao serviço entender e encontrei o merge já pronto. Para (b), gravei um telefone e tentei apagá-lo com `null`, com `""` e omitindo o campo: os três devolveram `200` e o número permaneceu. |
-| **Impacto** | Baixo hoje: o front envia o formulário inteiro, então o caminho de uso real funciona. O contrato é que está errado — `PATCH` promete atualização parcial e entrega semântica de substituição. Morde quando aparecer um segundo consumidor (app, script, integração) que mande só o campo alterado. O telefone não-apagável afeta quem cadastrou o número errado e quer removê-lo em vez de trocar. |
+| **Como cheguei nele** | Testando o formato de erro de payload da rota (seção 5). Enviei `{"telefone":"11988887777"}` esperando sucesso e recebi `422` cobrando `nome` e `documento`; fui ao serviço entender e encontrei o merge já pronto. Para (b), gravei um telefone e tentei apagá-lo com `null`, com `""` e omitindo o campo: os três devolveram `200` e o número permaneceu. **Depois foi reproduzido pela própria interface**, apagando o campo na tela de Perfil e salvando — ver abaixo. |
+| **Impacto** | **(a)** é só de contrato e não morde hoje, porque o front envia o formulário inteiro; o problema aparece quando surgir um segundo consumidor (app, script, integração) que mande só o campo alterado. **(b) é diferente: quebra o uso normal da tela.** Apagar o telefone no formulário de Perfil e salvar devolve `200`, e o número continua lá. Quem cadastrou o número errado e quer apenas removê-lo não consegue — só trocar por outro. Nada no banco impede: `schema.sql:19` declara `telefone TEXT` sem `NOT NULL`. |
 | **Corrigi?** | **Não.** O enunciado pede para anotar como dúvida o que pode ser decisão de produto, e (a) depende de uma escolha que não é minha: como expressar "limpar o campo". O `textoOpcional` colapsa `undefined`, `null` e `""` no mesmo `null`, então tornar os campos opcionais sem antes decidir isso trocaria um defeito por outro — "ausente" passaria a significar "apague". A correção certa é: campos opcionais, `undefined` = não mexe, `null` explícito = limpa (convenção do JSON Merge Patch, RFC 7396), e `??` em vez de `\|\|` no telefone. Mudar `PATCH` para `PUT` **não** resolveria: o perfil inclui `email`, `id` e `criado_em`, e o e-mail é deliberadamente não editável, então um corpo de PUT nunca seria a representação completa que o verbo exige. |
 | **Arquivos alterados** | nenhum |
+
+**A cadeia do (b), camada por camada.** Vale escrever porque a causa não está onde
+a rota aponta:
+
+| Camada | O que acontece |
+|---|---|
+| Tela | `Perfil.jsx:16` inicializa o campo com `usuario.telefone ?? ''`; apagar e salvar envia `""` |
+| Rota | `routes/perfil.js:33` chama o validador `telefone(...)` |
+| Validador | `validacao.js:167` delega a `textoOpcional`, que devolve `null` para `undefined`, `null` **e** `""` |
+| Serviço | `usuarioService.js:87` faz `telefone \|\| atual.telefone` — `null` é falsy, o número antigo volta |
+| Banco | `schema.sql:19` aceitaria `NULL` sem reclamar |
+
+A tela responde `200` e mostra o número de volta. Nenhuma camada recusa a
+operação; ela simplesmente não acontece.
+
+**Mesmo assim mantive sem corrigir**, por coerência com o resto desta entrega:
+é fora do escopo dos chamados abertos, e as duas metades do problema vivem na
+mesma função. Trocar só o `\|\|` por `??` resolveria o telefone e deixaria `nome` e
+`documento` com a semântica de substituição — meia correção, que esconde a outra
+metade em vez de resolvê-la. Prefiro o registro inteiro aqui a um remendo que
+tira o sintoma mais visível de cena.
 
 Verifiquei as outras rotas e **este é o único caso divergente**:
 `PATCH /carrinho/itens/:codigo` pede só `quantidade`, que é o único campo mutável
