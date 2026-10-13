@@ -1,7 +1,10 @@
+import { useEffect, useState } from 'react';
 import { Link, Route, Routes } from 'react-router-dom';
 import { Cabecalho } from './componentes/Cabecalho.jsx';
+import { PainelCarrinho } from './componentes/PainelCarrinho.jsx';
 import { RotaProtegida } from './componentes/RotaProtegida.jsx';
 import { Botao, EstadoVazio } from './componentes/ui.jsx';
+import { useAuth } from './contextos/AuthContext.jsx';
 import { Cadastro } from './paginas/Cadastro.jsx';
 import { Carrinho } from './paginas/Carrinho.jsx';
 import { Catalogo } from './paginas/Catalogo.jsx';
@@ -23,6 +26,16 @@ function NaoEncontrada() {
 }
 
 export function App() {
+  const { autenticado } = useAuth();
+  const [painelAberto, setPainelAberto] = useState(false);
+
+  // Sessao que cai com o painel aberto (expiracao de token, por exemplo)
+  // desmonta o painel sem baixar o estado - e ele reabriria sozinho no proximo
+  // login. Fechar junto com a sessao.
+  useEffect(() => {
+    if (!autenticado) setPainelAberto(false);
+  }, [autenticado]);
+
   return (
     <div className="flex min-h-screen flex-col">
       <a
@@ -33,7 +46,7 @@ export function App() {
         Pular para o conteúdo
       </a>
 
-      <Cabecalho />
+      <Cabecalho onAbrirCarrinho={() => setPainelAberto(true)} carrinhoAberto={painelAberto} />
 
       <main id="conteudo" className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
         <Routes>
@@ -53,6 +66,11 @@ export function App() {
           <Route path="*" element={<NaoEncontrada />} />
         </Routes>
       </main>
+
+      {/* O carrinho abre pelo "Carrinho" do cabecalho em qualquer largura. Havia
+          tambem um botao flutuante so no celular: saiu por ser um segundo
+          caminho para a mesma acao, e por cobrir o "Adicionar" dos cards. */}
+      {autenticado && <PainelCarrinho aberto={painelAberto} aoFechar={() => setPainelAberto(false)} />}
 
       <footer className="border-t border-tinta-200 bg-white">
         <div className="mx-auto max-w-6xl px-4 py-6 text-sm text-tinta-500">

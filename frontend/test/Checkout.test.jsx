@@ -2,14 +2,14 @@ import { faker } from '@faker-js/faker';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { carrinhoFactory, itemCarrinhoFactory } from './factories/carrinho.js';
+import { carrinhoFactory, itemCarrinhoFactory, resumoCarrinhoFactory } from './factories/carrinho.js';
 import { enderecoFactory } from './factories/endereco.js';
 
 vi.mock('../src/api/cliente.js', () => ({
   api: {
     auth: { eu: vi.fn() },
     enderecos: { listar: vi.fn(), criar: vi.fn(), salvar: vi.fn() },
-    carrinho: { ler: vi.fn() },
+    carrinhos: { listar: vi.fn(), ler: vi.fn() },
     pedidos: { criar: vi.fn() },
   },
   dinheiro: new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }),
@@ -24,12 +24,16 @@ const CASA = enderecoFactory({ id: 1, apelido: 'Casa', principal: true });
 const OFICINA = enderecoFactory({ id: 2, apelido: 'Oficina', principal: false });
 
 const CARRINHO = carrinhoFactory({
+  id: 7,
   itens: [itemCarrinhoFactory({ codigo: 'ARR-7001', preco: 156.8, quantidade: 2 })],
 });
 
 function montar({ enderecos = [CASA, OFICINA] } = {}) {
   api.enderecos.listar.mockResolvedValue({ dados: enderecos });
-  api.carrinho.ler.mockResolvedValue({ dados: CARRINHO });
+  api.carrinhos.listar.mockResolvedValue({
+    dados: [resumoCarrinhoFactory({ id: CARRINHO.id, principal: true, quantidadePecas: CARRINHO.quantidade_pecas })],
+  });
+  api.carrinhos.ler.mockResolvedValue({ dados: CARRINHO });
   api.pedidos.criar.mockResolvedValue({ dados: { numero: 'PED-2026-000001' } });
 
   return render(
@@ -56,8 +60,9 @@ describe('Checkout - endereco de entrega (KZN-331)', () => {
     await escolher('Oficina');
     await confirmar();
 
+    // Fecha o endereco escolhido (KZN-331) e o carrinho ativo (multiplos carrinhos).
     expect(api.pedidos.criar).toHaveBeenCalledWith(
-      expect.objectContaining({ endereco_id: OFICINA.id }),
+      expect.objectContaining({ endereco_id: OFICINA.id, carrinho_id: CARRINHO.id }),
     );
   });
 

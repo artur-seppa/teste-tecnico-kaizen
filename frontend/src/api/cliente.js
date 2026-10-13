@@ -103,18 +103,25 @@ export const api = {
     produto: (codigo) => requisitar(`/catalogo/${encodeURIComponent(codigo)}`),
   },
 
-  carrinho: {
-    ler: () => requisitar('/carrinho'),
-    adicionar: (codigo_produto, quantidade = 1) =>
-      requisitar('/carrinho/itens', { metodo: 'POST', corpo: { codigo_produto, quantidade } }),
-    alterar: (codigo, quantidade) =>
-      requisitar(`/carrinho/itens/${encodeURIComponent(codigo)}`, {
+  carrinhos: {
+    listar: () => requisitar('/carrinhos'),
+    ler: (id) => requisitar(`/carrinhos/${id}`),
+    criar: (dados) => requisitar('/carrinhos', { metodo: 'POST', corpo: dados }),
+    editar: (id, dados) => requisitar(`/carrinhos/${id}`, { metodo: 'PATCH', corpo: dados }),
+    marcarPrincipal: (id) => requisitar(`/carrinhos/${id}/principal`, { metodo: 'PUT' }),
+    remover: (id) => requisitar(`/carrinhos/${id}`, { metodo: 'DELETE' }),
+
+    // Adiciona na carrinho ativa (o backend cria "Carrinho 1" se nao houver).
+    adicionarItem: (codigo_produto, quantidade = 1) =>
+      requisitar('/carrinhos/itens', { metodo: 'POST', corpo: { codigo_produto, quantidade } }),
+    alterarItem: (id, codigo, quantidade) =>
+      requisitar(`/carrinhos/${id}/itens/${encodeURIComponent(codigo)}`, {
         metodo: 'PATCH',
         corpo: { quantidade },
       }),
-    remover: (codigo) =>
-      requisitar(`/carrinho/itens/${encodeURIComponent(codigo)}`, { metodo: 'DELETE' }),
-    limpar: () => requisitar('/carrinho', { metodo: 'DELETE' }),
+    removerItem: (id, codigo) =>
+      requisitar(`/carrinhos/${id}/itens/${encodeURIComponent(codigo)}`, { metodo: 'DELETE' }),
+    limpar: (id) => requisitar(`/carrinhos/${id}/itens`, { metodo: 'DELETE' }),
   },
 
   pedidos: {

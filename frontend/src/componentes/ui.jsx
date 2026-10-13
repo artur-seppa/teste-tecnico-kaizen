@@ -212,3 +212,43 @@ export function Paginacao({ paginacao, aoMudar }) {
     </nav>
   );
 }
+
+/*
+ * Icones. Tracado de 1.5 com `currentColor`, para herdarem a cor de quem os
+ * usa. Sao decorativos: quem nomeia o controle e o `aria-label` do botao, por
+ * isso `aria-hidden` aqui.
+ */
+export function IconeCarrinho({ className = 'size-6' }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      <path d="M2.5 3h2l2.2 11.2a1.5 1.5 0 0 0 1.5 1.2h8.4a1.5 1.5 0 0 0 1.5-1.2L19.5 7H6" />
+      <circle cx="9" cy="19.5" r="1.4" />
+      <circle cx="17" cy="19.5" r="1.4" />
+    </svg>
+  );
+}
+
+export function IconeMenu({ className = 'size-6' }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      className={className}
+    >
+      <path d="M4 7h16M4 12h16M4 17h16" />
+    </svg>
+  );
+}

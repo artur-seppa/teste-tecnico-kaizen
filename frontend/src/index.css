@@ -55,3 +55,43 @@ body {
 :focus-visible {
   @apply outline-2 outline-offset-2 outline-marca-600;
 }
+
+/*
+ * Rolagem do fundo com um painel aberto.
+ *
+ * `showModal()` torna o resto da pagina inerte para clique e teclado, mas NAO
+ * para a rolagem: o gesto sobre o ::backdrop rola a vitrine atras, e a rolagem
+ * dentro do painel encadeia para ela ao chegar no fim. Daí a sensacao de duas
+ * barras disputando o eixo Y.
+ *
+ * A contencao fica no proprio dialogo. O ::backdrop precisa do `overflow:
+ * hidden` antes do `overscroll-behavior`, porque por padrao ele nao e um
+ * container de rolagem e ignoraria a propriedade.
+ *
+ * So conter nao bastava aqui: a barra do fundo continuava desenhada ao lado da
+ * barra do painel, duas no mesmo eixo. Por isso o <html> tambem para de rolar
+ * enquanto houver um dialogo modal aberto. Isso tem um preco - tirar a barra
+ * encolheria a pagina de repente -, pago pelo `padding-right` da regra la
+ * embaixo, onde esta a explicacao. A posicao de leitura e preservada:
+ * `overflow: hidden` nao zera o scroll, ao contrario de `position: fixed`. O
+ * cabecalho e sticky, mas com o fundo travado ele nao tem para onde escorregar.
+ */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+html:has(dialog:modal) {
+  overflow: hidden;
+
+  /* A largura da barra que acabou de sumir, medida pelo hook antes de abrir.
+     Devolver esse espaco como padding mantem a pagina no lugar. Reservar a
+     pista com `scrollbar-gutter: stable` tambem evitaria o salto, mas deixa uma
+     canaleta vazia desenhada ao lado do painel - que e justamente a segunda
+     barra que se queria eliminar. */
+  padding-right: var(--largura-da-barra, 0px);
+}

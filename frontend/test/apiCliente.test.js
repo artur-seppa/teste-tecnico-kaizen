@@ -11,10 +11,29 @@ describe('api/cliente', () => {
   it('manda o cookie de sessao junto, senao a API nao reconhece a pessoa', async () => {
     const { chamadas } = stubarFetch(() => respostaJson(200, { dados: {} }));
 
-    await api.carrinho.ler();
+    await api.carrinhos.listar();
 
-    expect(chamadas[0].url).toBe('/api/carrinho');
+    expect(chamadas[0].url).toBe('/api/carrinhos');
     expect(chamadas[0].opcoes.credentials).toBe('include');
+  });
+
+  it('adiciona na ativa via POST /carrinhos/itens', async () => {
+    const { chamadas } = stubarFetch(() => respostaJson(201, { dados: {} }));
+
+    await api.carrinhos.adicionarItem('ARR-7001', 2);
+
+    expect(chamadas[0].url).toBe('/api/carrinhos/itens');
+    expect(chamadas[0].opcoes.method).toBe('POST');
+    expect(JSON.parse(chamadas[0].opcoes.body)).toEqual({ codigo_produto: 'ARR-7001', quantidade: 2 });
+  });
+
+  it('troca o ativo via PUT /carrinhos/:id/principal', async () => {
+    const { chamadas } = stubarFetch(() => respostaJson(200, { dados: [] }));
+
+    await api.carrinhos.marcarPrincipal(7);
+
+    expect(chamadas[0].url).toBe('/api/carrinhos/7/principal');
+    expect(chamadas[0].opcoes.method).toBe('PUT');
   });
 
   it('devolve null em 204 sem tentar fazer parse do corpo', async () => {
@@ -30,7 +49,7 @@ describe('api/cliente', () => {
       }),
     );
 
-    await expect(api.carrinho.adicionar('ARR-7001', 5)).rejects.toMatchObject({
+    await expect(api.carrinhos.adicionarItem('ARR-7001', 5)).rejects.toMatchObject({
       status: 409,
       codigo: 'ESTOQUE_INSUFICIENTE',
       message: 'Restam apenas 2 unidades.',
