@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS usuarios (
   atualizado_em TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios (email);
+-- Sem indice declarado para `email`: a restricao UNIQUE acima ja cria um
+-- indice implicito, e um segundo so custaria escrita.
 
 CREATE TABLE IF NOT EXISTS enderecos (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,

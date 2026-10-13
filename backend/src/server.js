@@ -1,5 +1,5 @@
 import { config, validarConfig } from './config.js';
-import { aplicarSchema, fecharBanco, obterBanco } from './db/index.js';
+import { migrarBanco, fecharBanco, obterBanco } from './db/index.js';
 import { verificarErp } from './erp/cliente.js';
 import { criarApp } from './app.js';
 
@@ -10,7 +10,7 @@ try {
   process.exit(1);
 }
 
-aplicarSchema(obterBanco());
+migrarBanco(obterBanco());
 
 const app = criarApp();
 const servidor = app.listen(config.porta, config.host, async () => {

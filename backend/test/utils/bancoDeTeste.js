@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { aplicarSchema } from '../../src/db/index.js';
+import { migrarBanco } from '../../src/db/index.js';
 import { itemCarrinhoFactory } from '../factories/itemCarrinho.js';
 import { usuarioFactory } from '../factories/usuario.js';
 
@@ -8,7 +8,7 @@ import { usuarioFactory } from '../factories/usuario.js';
 export function criarBancoDeTeste() {
   const db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
-  aplicarSchema(db);
+  migrarBanco(db);
   return db;
 }
 
