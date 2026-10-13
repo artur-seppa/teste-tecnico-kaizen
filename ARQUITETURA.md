@@ -98,11 +98,16 @@ Tudo sob `/api`. Erros seguem o mesmo formato do ERP:
 | POST   | `/enderecos`                |   ✓    | Cadastra endereço                |
 | PUT    | `/enderecos/:id`            |   ✓    | Edita endereço                   |
 | DELETE | `/enderecos/:id`            |   ✓    | Remove endereço                  |
-| GET    | `/carrinho`                 |   ✓    | Carrinho com preço/estoque atual |
-| POST   | `/carrinho/itens`           |   ✓    | Adiciona item                    |
-| PATCH  | `/carrinho/itens/:codigo`   |   ✓    | Muda a quantidade                |
-| DELETE | `/carrinho/itens/:codigo`   |   ✓    | Remove item                      |
-| DELETE | `/carrinho`                 |   ✓    | Esvazia                          |
+| GET    | `/carrinhos`                |   ✓    | Lista os carrinhos (resumo)      |
+| POST   | `/carrinhos`                |   ✓    | Cria carrinho                    |
+| GET    | `/carrinhos/:id`            |   ✓    | Carrinho com preço/estoque atual |
+| PATCH  | `/carrinhos/:id`            |   ✓    | Renomeia                         |
+| PUT    | `/carrinhos/:id/principal`  |   ✓    | Torna ativo                      |
+| DELETE | `/carrinhos/:id`            |   ✓    | Remove carrinho                  |
+| POST   | `/carrinhos/itens`          |   ✓    | Adiciona item ao ativo           |
+| PATCH  | `/carrinhos/:id/itens/:codigo` | ✓   | Muda a quantidade                |
+| DELETE | `/carrinhos/:id/itens/:codigo` | ✓   | Remove item                      |
+| DELETE | `/carrinhos/:id/itens`      |   ✓    | Esvazia                          |
 | POST   | `/pedidos`                  |   ✓    | **Checkout**                     |
 | GET    | `/pedidos`                  |   ✓    | Meus pedidos                     |
 | GET    | `/pedidos/:numero`          |   ✓    | Detalhe do pedido                |
@@ -129,7 +134,7 @@ pessoa precisa ver.
 | `/produto/:codigo`  |   —    | Detalhe, escolha de quantidade                   |
 | `/entrar`           |   —    | Login                                            |
 | `/cadastro`         |   —    | Criar conta                                      |
-| `/carrinho`         |   ✓    | Alterar quantidade, remover, esvaziar            |
+| `/carrinho`         |   ✓    | Alterar quantidade, remover, esvaziar (o caminho principal é o painel que desliza sobre a vitrine) |
 | `/checkout`         |   ✓    | Escolher endereço (ou criar na hora), observação |
 | `/pedidos`          |   ✓    | Histórico com status vindo do ERP                |
 | `/pedidos/:numero`  |   ✓    | Itens, endereço e valores                        |
