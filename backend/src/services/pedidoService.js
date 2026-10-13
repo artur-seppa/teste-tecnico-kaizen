@@ -64,7 +64,9 @@ export async function finalizarPedido(usuario, enderecoId, observacao, carrinhoI
    * falhar, o pedido existe mas nao aparece em "meus pedidos" - por isso o log
    * abaixo carrega o numero: da para reconciliar a mao.
    * Resolver isso de verdade exigiria um outbox ou um endpoint de
-   * cancelamento no ERP; esta anotado no README como evolucao.
+   * cancelamento no ERP; esta anotado no RELATORIO.md (secao 7, item 6) como
+   * evolucao - o comentario original mandava para o README, que nao trata
+   * disso.
    */
   try {
     db.transaction(() => {
