@@ -7,7 +7,7 @@ import { paginaCatalogoFactory, produtoFactory } from './factories/produto.js';
 vi.mock('../src/api/cliente.js', () => ({
   api: {
     auth: { eu: vi.fn() },
-    carrinho: { ler: vi.fn(), adicionar: vi.fn() },
+    carrinhos: { listar: vi.fn(), ler: vi.fn(), adicionarItem: vi.fn() },
     catalogo: { listar: vi.fn(), categorias: vi.fn() },
   },
   dinheiro: new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }),
@@ -27,7 +27,7 @@ const AMORTECEDOR = produtoFactory({ codigo: 'SUS-2001', descricao: 'Amortecedor
  */
 function montar({ entrada = '/' } = {}) {
   api.auth.eu.mockRejectedValue(new Error('401'));
-  api.carrinho.ler.mockRejectedValue(new Error('401'));
+  api.carrinhos.listar.mockRejectedValue(new Error('401'));
   api.catalogo.categorias.mockResolvedValue({ dados: ['SUSPENSAO', 'FREIOS'] });
   api.catalogo.listar.mockResolvedValue(
     paginaCatalogoFactory({ produtos: [AMORTECEDOR], pagina: 5, total: 120 }),
@@ -87,5 +87,40 @@ describe('Catalogo - filtro aplicado fora da primeira pagina (KZN-325)', () => {
     fireEvent.click(await screen.findByRole('button', { name: /anterior/i }));
 
     await waitFor(() => expect(ultimaConsulta()).toMatchObject({ pagina: 4 }));
+  });
+});
+
+describe('Catalogo - adicionar na carrinho ativa (multiplos carrinhos)', () => {
+  it('adiciona pela vitrine sem mudar a URL (nao perde a busca/pagina)', async () => {
+    const { usuarioFactory } = await import('./factories/usuario.js');
+    const { carrinhoFactory, resumoCarrinhoFactory } = await import('./factories/carrinho.js');
+
+    api.auth.eu.mockResolvedValue({ dados: usuarioFactory() });
+    api.carrinhos.listar.mockResolvedValue({ dados: [resumoCarrinhoFactory({ id: 1, principal: true })] });
+    api.carrinhos.ler.mockResolvedValue({ dados: carrinhoFactory({ id: 1 }) });
+    api.carrinhos.adicionarItem.mockResolvedValue({ dados: carrinhoFactory({ id: 1 }) });
+    api.catalogo.categorias.mockResolvedValue({ dados: ['SUSPENSAO'] });
+    api.catalogo.listar.mockResolvedValue(
+      paginaCatalogoFactory({ produtos: [AMORTECEDOR], pagina: 2, total: 60 }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={['/?busca=amortecedor&pagina=2']}>
+        <ProvedorAuth>
+          <ProvedorCarrinho>
+            <Catalogo />
+          </ProvedorCarrinho>
+        </ProvedorAuth>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /adicionar/i }));
+
+    await waitFor(() =>
+      expect(api.carrinhos.adicionarItem).toHaveBeenCalledWith('SUS-2001', 1),
+    );
+    // A consulta ao catalogo nao foi refeita: a vitrine nao recarregou/navegou.
+    expect(api.catalogo.listar).toHaveBeenCalledTimes(1);
+    expect(ultimaConsulta()).toMatchObject({ busca: 'amortecedor', pagina: 2 });
   });
 });

@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { config } from '../config.js';
+import { rodarMigracoes } from './migracoes.js';
 
 let instancia = null;
 
@@ -18,9 +19,13 @@ export function obterBanco() {
   return instancia;
 }
 
-export function aplicarSchema(db = obterBanco()) {
-  const ddl = fs.readFileSync(new URL('./schema.sql', import.meta.url), 'utf8');
-  db.exec(ddl);
+/**
+ * Leva o banco ao estado atual aplicando as migracoes pendentes. Substitui o
+ * antigo `aplicarSchema`, que dava um `exec` num arquivo de schema unico: a
+ * atualizacao de um banco com dados agora e segura e versionada.
+ */
+export function migrarBanco(db = obterBanco()) {
+  rodarMigracoes(db);
 }
 
 export function fecharBanco() {

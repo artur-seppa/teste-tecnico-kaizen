@@ -15,6 +15,10 @@ backend/data/*.db-shm
 # Build do front (gerado por: npm run build)
 frontend/dist/
 
+# Notas de trabalho (specs, planos e reviews do processo) - nao fazem parte da
+# entrega, ficam so na maquina
+docs/superpowers/
+
 # Logs e temporarios
 *.log
 npm-debug.log*

@@ -6,7 +6,7 @@ import { FormularioEndereco } from '../componentes/FormularioEndereco.jsx';
 import { Alerta, Botao, Carregando, ErroGeral, EstadoVazio } from '../componentes/ui.jsx';
 
 export function Checkout() {
-  const { carrinho, carregando: carregandoCarrinho, recarregar } = useCarrinho();
+  const { carrinhoAtivo: carrinho, ativoId, carregando: carregandoCarrinho, recarregar } = useCarrinho();
   const navegar = useNavigate();
 
   const [enderecos, setEnderecos] = useState([]);
@@ -53,7 +53,7 @@ export function Checkout() {
       // Entrega vai para o endereco que a pessoa marcou. O principal decide
       // apenas qual vem pre-selecionado ao abrir a tela (ver o efeito acima);
       // daqui para baixo quem manda e a escolha dela.
-      const resposta = await api.pedidos.criar({ endereco_id: enderecoId, observacao });
+      const resposta = await api.pedidos.criar({ endereco_id: enderecoId, carrinho_id: ativoId, observacao });
       await recarregar();
       navegar(`/pedidos/${resposta.dados.numero}`, { replace: true, state: { novo: true } });
     } catch (falha) {
@@ -68,7 +68,7 @@ export function Checkout() {
 
   if (carregando || carregandoCarrinho) return <Carregando texto="Preparando o checkout..." />;
 
-  if (carrinho.itens.length === 0) {
+  if (!carrinho || carrinho.itens.length === 0) {
     return (
       <EstadoVazio
         titulo="Nada para fechar"

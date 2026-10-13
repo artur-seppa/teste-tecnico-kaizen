@@ -192,3 +192,23 @@ export function lerBooleano(valor) {
   if (['false', '0', 'nao', 'n'].includes(texto)) return false;
   return null;
 }
+
+/**
+ * Booleano vindo do CORPO de uma requisicao. Diferente de `lerBooleano` (query
+ * string, que tolera): aqui ausente e omissao legitima (undefined), mas um valor
+ * presente e irreconhecivel e erro (422). Aceita booleano nativo do JSON e as
+ * mesmas palavras de `lerBooleano`.
+ */
+export function lerBooleanoDeCorpo(valor, campo, erros) {
+  if (valor === undefined) return undefined;
+  if (typeof valor === 'boolean') return valor;
+
+  if (typeof valor === 'string') {
+    const texto = valor.trim().toLowerCase();
+    if (['true', '1', 'sim', 's'].includes(texto)) return true;
+    if (['false', '0', 'nao', 'n'].includes(texto)) return false;
+  }
+
+  erros.adicionar(campo, 'Valor deve ser verdadeiro ou falso.');
+  return undefined;
+}

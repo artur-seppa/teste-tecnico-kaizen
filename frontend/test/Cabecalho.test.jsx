@@ -1,8 +1,8 @@
 import { faker } from '@faker-js/faker';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { BrowserRouter, MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { carrinhoFactory, itemCarrinhoFactory } from './factories/carrinho.js';
+import { carrinhoFactory, itemCarrinhoFactory, resumoCarrinhoFactory } from './factories/carrinho.js';
 import { usuarioFactory } from './factories/usuario.js';
 
 // Teste de componente: o que ele afirma e a tela. O transporte HTTP e do
@@ -10,7 +10,11 @@ import { usuarioFactory } from './factories/usuario.js';
 vi.mock('../src/api/cliente.js', () => ({
   api: {
     auth: { eu: vi.fn(), entrar: vi.fn(), cadastrar: vi.fn(), sair: vi.fn() },
-    carrinho: { ler: vi.fn(), adicionar: vi.fn(), alterar: vi.fn(), remover: vi.fn(), limpar: vi.fn() },
+    carrinhos: {
+      listar: vi.fn(), ler: vi.fn(), criar: vi.fn(), editar: vi.fn(),
+      marcarPrincipal: vi.fn(), remover: vi.fn(),
+      adicionarItem: vi.fn(), alterarItem: vi.fn(), removerItem: vi.fn(), limpar: vi.fn(),
+    },
   },
   ErroApi: class ErroApi extends Error {},
 }));
@@ -20,22 +24,38 @@ const { Cabecalho } = await import('../src/componentes/Cabecalho.jsx');
 const { ProvedorAuth } = await import('../src/contextos/AuthContext.jsx');
 const { ProvedorCarrinho } = await import('../src/contextos/CarrinhoContext.jsx');
 
-function montar(carrinho) {
+// O contador do cabecalho le as pecas do carrinho ativo pelo resumo da lista.
+function montar(carrinhoAtivo) {
   api.auth.eu.mockResolvedValue({ dados: usuarioFactory() });
-  api.carrinho.ler.mockResolvedValue({ dados: carrinho });
+  api.carrinhos.listar.mockResolvedValue({
+    dados: [resumoCarrinhoFactory({ id: carrinhoAtivo.id, principal: true, quantidadePecas: carrinhoAtivo.quantidade_pecas })],
+  });
+  api.carrinhos.ler.mockResolvedValue({ dados: carrinhoAtivo });
 
   return render(
     <MemoryRouter>
       <ProvedorAuth>
         <ProvedorCarrinho>
-          <Cabecalho />
+          <Cabecalho onAbrirCarrinho={vi.fn()} />
         </ProvedorCarrinho>
       </ProvedorAuth>
     </MemoryRouter>,
   );
 }
 
-const contador = () => screen.findByLabelText(/no carrinho/i);
+/**
+ * Os dois caminhos para o carrinho convivem no DOM: o icone ate o tablet e o
+ * rotulo escrito no desktop. Quem esconde um deles e o CSS, que o jsdom nao
+ * aplica - entao o contador e verificado nos dois, no numero que aparece na
+ * tela e no nome que o leitor de tela anuncia.
+ */
+async function carrinhos() {
+  const botoes = await screen.findAllByRole('button', { name: /abrir carrinho/i });
+  // Os dois precisam existir: se um sumir num refactor, o `for` abaixo passaria
+  // em silencio verificando so o que sobrou.
+  expect(botoes).toHaveLength(2);
+  return botoes.map((botao) => ({ texto: botao.textContent, nome: botao.getAttribute('aria-label') }));
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -54,7 +74,10 @@ describe('Cabecalho - contador do carrinho (KZN-318)', () => {
       }),
     );
 
-    expect(await contador()).toHaveTextContent('7');
+    for (const botao of await carrinhos()) {
+      expect(botao.texto).toContain('7');
+      expect(botao.nome).toContain('7 peças');
+    }
   });
 
   it('conta tambem as pecas da linha indisponivel', async () => {
@@ -73,33 +96,40 @@ describe('Cabecalho - contador do carrinho (KZN-318)', () => {
       }),
     );
 
-    expect(await contador()).toHaveTextContent('3');
+    for (const botao of await carrinhos()) {
+      expect(botao.texto).toContain('3');
+      expect(botao.nome).toContain('3 peças');
+    }
   });
 
   it('nao mostra contador quando o carrinho esta vazio', async () => {
     montar(carrinhoFactory());
 
-    expect(await screen.findByRole('link', { name: /carrinho/i })).toBeInTheDocument();
-    expect(screen.queryByLabelText(/no carrinho/i)).not.toBeInTheDocument();
+    for (const botao of await carrinhos()) {
+      expect(botao.nome).toBe('Abrir carrinho');
+      expect(botao.texto).not.toMatch(/\d/);
+    }
   });
 
   it('nao quebra a vitrine quando a leitura do carrinho falha', async () => {
     // 401 de visitante cai aqui: renderiza sem contador, nao quebra.
     api.auth.eu.mockResolvedValue({ dados: usuarioFactory() });
-    api.carrinho.ler.mockRejectedValue(new Error('401'));
+    api.carrinhos.listar.mockRejectedValue(new Error('401'));
 
     render(
       <MemoryRouter>
         <ProvedorAuth>
           <ProvedorCarrinho>
-            <Cabecalho />
+            <Cabecalho onAbrirCarrinho={vi.fn()} />
           </ProvedorCarrinho>
         </ProvedorAuth>
       </MemoryRouter>,
     );
 
-    expect(await screen.findByRole('link', { name: /carrinho/i })).toBeInTheDocument();
-    expect(screen.queryByLabelText(/no carrinho/i)).not.toBeInTheDocument();
+    for (const botao of await carrinhos()) {
+      expect(botao.nome).toBe('Abrir carrinho');
+      expect(botao.texto).not.toMatch(/\d/);
+    }
   });
 });
 
@@ -110,13 +140,13 @@ describe('Cabecalho - contador do carrinho (KZN-318)', () => {
 function montarNaVitrine(url) {
   window.history.pushState({}, '', url);
   api.auth.eu.mockRejectedValue(new Error('401'));
-  api.carrinho.ler.mockRejectedValue(new Error('401'));
+  api.carrinhos.listar.mockRejectedValue(new Error('401'));
 
   return render(
     <BrowserRouter>
       <ProvedorAuth>
         <ProvedorCarrinho>
-          <Cabecalho />
+          <Cabecalho onAbrirCarrinho={() => {}} />
         </ProvedorCarrinho>
       </ProvedorAuth>
     </BrowserRouter>,
@@ -161,5 +191,56 @@ describe('Cabecalho - busca feita fora da primeira pagina (KZN-325)', () => {
 
     expect(urlAtual().has('busca')).toBe(false);
     expect(urlAtual().has('pagina')).toBe(false);
+  });
+});
+
+/**
+ * Abaixo do `lg` a navegacao escrita sai da barra e vai para o MenuNavegacao,
+ * que desce do topo.
+ *
+ * O jsdom nao implementa `showModal`, entao aqui nao da para afirmar que o
+ * dialogo abriu de verdade - o que se afirma e o estado que a tela expoe
+ * (`aria-expanded`) e o conteudo do menu. A abertura, a animacao e a largura em
+ * que ele aparece sao comportamento de navegador, verificados fora do jsdom.
+ */
+describe('Cabecalho - menu do hamburguer', () => {
+  // Sem `showModal` o <dialog> nunca fica `open`, e um dialogo fechado nao
+  // expoe o papel `dialog` para as consultas por papel - por isso o menu e
+  // alcancado pelo elemento, e so o conteudo dele e consultado por papel.
+  const menu = () => document.querySelector('dialog[aria-label="Menu"]');
+
+  it('alterna o estado do hamburguer ao abrir e ao fechar', async () => {
+    montar(carrinhoFactory());
+
+    const abrir = await screen.findByRole('button', { name: /abrir menu/i });
+    expect(abrir).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(abrir);
+    expect(abrir).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: /fechar menu/i, hidden: true }));
+    expect(abrir).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('leva aos destinos da conta e fecha ao navegar', async () => {
+    montar(carrinhoFactory());
+    fireEvent.click(await screen.findByRole('button', { name: /abrir menu/i }));
+
+    const links = within(menu());
+    expect(links.getByRole('link', { name: 'Pedidos', hidden: true })).toHaveAttribute('href', '/pedidos');
+    expect(links.getByRole('link', { name: 'Perfil', hidden: true })).toHaveAttribute('href', '/perfil');
+
+    fireEvent.click(links.getByRole('link', { name: 'Pedidos', hidden: true }));
+    expect(screen.getByRole('button', { name: /abrir menu/i })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('encerra a sessao pelo menu', async () => {
+    api.auth.sair.mockResolvedValue({});
+    montar(carrinhoFactory());
+
+    fireEvent.click(await screen.findByRole('button', { name: /abrir menu/i }));
+    fireEvent.click(within(menu()).getByRole('button', { name: 'Sair', hidden: true }));
+
+    await waitFor(() => expect(api.auth.sair).toHaveBeenCalled());
   });
 });

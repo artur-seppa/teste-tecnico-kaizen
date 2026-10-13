@@ -9,7 +9,7 @@
  */
 import fs from 'node:fs';
 import { config } from '../src/config.js';
-import { aplicarSchema, fecharBanco, obterBanco } from '../src/db/index.js';
+import { migrarBanco, fecharBanco, obterBanco } from '../src/db/index.js';
 
 if (process.argv.includes('--reset')) {
   for (const sufixo of ['', '-shm', '-wal']) {
@@ -22,8 +22,8 @@ if (process.argv.includes('--reset')) {
 }
 
 const db = obterBanco();
-aplicarSchema(db);
-console.log(`schema aplicado em: ${config.caminhoBanco}`);
+migrarBanco(db);
+console.log(`schema aplicado (migracoes) em: ${config.caminhoBanco}`);
 
 for (const tabela of ['usuarios', 'enderecos', 'carrinho_itens', 'pedidos_usuario']) {
   const { total } = db.prepare(`SELECT COUNT(*) AS total FROM ${tabela}`).get();
