@@ -1,8 +1,8 @@
 # Relatório de entrega
 
 **Candidato:** Artur Reiman
-**Data de entrega:**
-**Tempo aproximado dedicado:**
+**Data de entrega:** 13/10/26
+**Tempo aproximado dedicado:** 2 dias parciais
 
 ---
 
