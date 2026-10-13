@@ -82,7 +82,7 @@ Sobre os 30 minutos do README: vale ser preciso, porque é fácil contar errado.
 
 | | |
 |---|---|
-| **Causa** | `carrinhoService.js:88` devolvia `quantidade_pecas: itens.length` — o mesmo valor de `quantidade_itens`, que está logo acima. O campo prometia peças e entregava linhas. O front estava correto e não precisou mudar por este chamado: no arquivo como recebido, o badge já lia `quantidade_pecas`, o campo certo; ele só recebia o número errado do servidor. (Com os múltiplos carrinhos o contador passou a vir do contexto, como `quantidadePecas` — ver seção 4 e a nota `KZN-5D1E` no `Cabecalho.jsx`.) |
+| **Causa** | `carrinhoService.js:93` devolvia `quantidade_pecas: itens.length` — o mesmo valor de `quantidade_itens`, que está logo acima. O campo prometia peças e entregava linhas. O front estava correto e não precisou mudar por este chamado: no arquivo como recebido, o badge já lia `quantidade_pecas`, o campo certo; ele só recebia o número errado do servidor. (Com os múltiplos carrinhos o contador passou a vir do contexto, como `quantidadePecas` — ver seção 4 e a nota `KZN-5D1E` no `Cabecalho.jsx`.) |
 | **Como reproduzi** | Carrinho com 2 produtos distintos e 5 + 2 = 7 unidades: o badge mostrava 2. É o relato literal do chamado ("mostra 2, mas eu tenho 7 peças"). |
 | **Arquivos alterados** | `backend/src/services/carrinhoService.js` |
 | **Como validei a correção** | Teste do service (backend) e teste de componente do `Cabecalho` renderizando com `ProvedorAuth` + `ProvedorCarrinho` reais (frontend). Verifiquei que o teste de front falha se o badge voltar a ler `quantidade_itens`. |
@@ -933,7 +933,7 @@ O que ficou de fora, na ordem em que eu atacaria.
    ou Kafka) só se crescer para muitos eventos e consumidores; cada degrau traz
    infra e torna o checkout assíncrono. **Saga não se aplica**: o passo do ERP
    não tem compensação (sem endpoint de cancelamento). A concorrência de estoque
-   é do ERP arbitrar. Nada disso entrou na funcionalidade, de propósito.
+   é do ERP arbitrar.
 7. **Tipos fortes no banco (Postgres) ou um ORM.** O SQLite é tipado de forma
    fraca: `VARCHAR(n)` é ignorado (o tamanho se controla no validador e em
    `CHECK`), não há booleano nem enum nativos. Num Postgres isso seria tipo real

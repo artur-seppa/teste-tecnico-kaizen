@@ -210,6 +210,18 @@ como alerta. Os dois usam o tom 700, que passa em contraste.
 
 - **Carrinho fica no servidor**, não no `localStorage`: trocar de navegador ou de
   celular mantém o que a pessoa escolheu.
+- **Vários carrinhos por cliente, um ativo.** Cada cliente mantém até 10
+  carrinhos nomeados, e exatamente um é o **principal**: é nele que o botão
+  "adicionar" da vitrine põe a peça, é ele que o painel mostra e é ele que o
+  checkout fecha. "Trocar de carrinho" é marcar outro como principal. Quem
+  garante que há no máximo um é o banco, por índice único parcial em
+  `carrinhos(usuario_id) WHERE principal = 1`.
+- **Apagar o carrinho ativo promove o mais recente** que sobrou; se era o único,
+  o cliente fica sem carrinho nenhum e a tela convida a criar. É a mesma regra
+  de `removerEndereco`. Adicionar uma peça sem ter carrinho cria o "Carrinho 1"
+  na hora, já principal.
+- **Fechar o pedido remove o carrinho fechado**, e só ele: os outros ficam
+  intactos. O checkout fecha um carrinho por vez, o ativo.
 - **Preço nunca congela no carrinho.** Guardamos só código e quantidade; preço,
   estoque e descrição são lidos do ERP a cada leitura. Item que ficou sem estoque
   aparece marcado em vez de quebrar a tela.
@@ -233,7 +245,7 @@ backend/
     server.js            bootstrap, graceful shutdown
     app.js               montagem do Express
     config.js            env + validação fail-fast
-    db/                  schema e conexão SQLite
+    db/                  conexão SQLite + migrações versionadas (runner e migrations/)
     erp/cliente.js       ÚNICO ponto que fala com o ERP
     middleware/          sessão JWT, request-id, erros
     routes/              HTTP: lê, chama o serviço, devolve JSON
