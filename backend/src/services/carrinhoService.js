@@ -3,17 +3,20 @@ import { ApiError } from '../lib/ApiError.js';
 import { paraCentavos, paraReais } from '../lib/dinheiro.js';
 import * as erp from '../erp/cliente.js';
 import { comImagemDaLoja } from '../lib/produto.js';
+import { resolverAtivaOuCriar, resolverDoUsuario } from './carrinhosService.js';
 
 const MAXIMO_ITENS = 50;
 const MAXIMO_POR_ITEM = 99;
 
 /**
- * O carrinho guarda apenas codigo + quantidade.
+ * Dono da tabela `carrinho_itens`. Cada item pertence a um carrinho; o dono do
+ * carrinho e checado pelo `carrinhosService` antes de qualquer operacao, entao
+ * nenhuma funcao daqui recebe item de um carrinho que nao e do usuario.
  *
- * Preco, descricao e estoque sao buscados no ERP a cada leitura, entao o
- * cliente nunca ve preco congelado de semanas atras nem compra algo que saiu
- * de linha. O custo e uma chamada por item - aceitavel para um carrinho, que
- * raramente passa de uma duzia de linhas.
+ * O carrinho guarda apenas codigo + quantidade. Preco, descricao e estoque sao
+ * buscados no ERP a cada leitura, entao o cliente nunca ve preco congelado nem
+ * compra algo que saiu de linha. O custo e uma chamada por item - aceitavel para
+ * um carrinho.
  */
 async function enriquecerItens(linhas) {
   return Promise.all(
@@ -69,33 +72,46 @@ async function enriquecerItens(linhas) {
   );
 }
 
+/** Marca que o carrinho mudou, para a listagem ordenar pelo uso recente. */
+function tocarCarrinho(carrinhoId, db) {
+  db.prepare('UPDATE carrinhos SET atualizado_em = ? WHERE id = ?').run(agoraISO(), carrinhoId);
+}
+
 /*
  * NOTA DE REVISAO [KZN-7F3A] - reavaliada, trecho corrigido.
  *
  * Historico no RELATORIO.md (secao 2). Os dois chamados do carrinho moravam
- * aqui: o total somava linha indisponivel (KZN-312) e quantidade_pecas
- * repetia itens.length (KZN-318).
+ * aqui: o total somava linha indisponivel (KZN-312) e quantidade_pecas repetia
+ * itens.length (KZN-318). Com multiplos carrinhos (secao 4), a leitura passou a
+ * ser por carrinho (`carrinhoId`), resolvido por (id, usuario_id).
  */
-export async function lerCarrinho(usuarioId, db = obterBanco()) {
+export async function lerCarrinho(usuarioId, carrinhoId, db = obterBanco()) {
+  const carrinho = resolverDoUsuario(usuarioId, carrinhoId, db);
+  return montarCarrinho(carrinho, db);
+}
+
+async function montarCarrinho(carrinho, db) {
   const linhas = db
-    .prepare('SELECT * FROM carrinho_itens WHERE usuario_id = ? ORDER BY adicionado_em ASC, id ASC')
-    .all(usuarioId);
+    .prepare('SELECT * FROM carrinho_itens WHERE carrinho_id = ? ORDER BY adicionado_em ASC, id ASC')
+    .all(carrinho.id);
 
   const itens = await enriquecerItens(linhas);
 
-  // So o que da para comprar entra no total: o numero em destaque na tela e o
-  // que a pessoa vai pagar, e com um item bloqueado o checkout nem abre. O
-  // caminho "produto sumiu do catalogo" ja fazia isso, zerando valor_total la
-  // em cima; aqui a regra passa a valer para toda linha indisponivel.
+  // So o que da para comprar entra no total: o numero em destaque e o que a
+  // pessoa vai pagar, e com um item bloqueado o checkout nem abre.
   const totalCentavos = itens.reduce(
     (soma, item) => (item.disponivel ? soma + paraCentavos(item.valor_total) : soma),
     0,
   );
 
   return {
+    id: carrinho.id,
+    titulo: carrinho.titulo,
+    descricao: carrinho.descricao,
+    principal: carrinho.principal === 1,
     itens,
-    // Linhas do carrinho (produtos distintos) e pecas de verdade (soma das
-    // unidades) sao numeros diferentes - o contador do cabecalho usa o segundo.
+    // Linhas (produtos distintos) e pecas (soma das unidades) sao numeros
+    // diferentes - o contador do cabecalho usa o segundo.
     quantidade_itens: itens.length,
     quantidade_pecas: itens.reduce((soma, item) => soma + item.quantidade, 0),
     valor_total: paraReais(totalCentavos),
@@ -103,10 +119,18 @@ export async function lerCarrinho(usuarioId, db = obterBanco()) {
   };
 }
 
+/** Adiciona na carrinho ativa (principal), criando "Carrinho 1" se nao houver. */
+export async function adicionarNaAtiva(usuarioId, codigoProduto, quantidade, db = obterBanco()) {
+  const carrinho = resolverAtivaOuCriar(usuarioId, db);
+  return adicionarItem(usuarioId, carrinho.id, codigoProduto, quantidade, db);
+}
+
 /** Soma a quantidade se o item ja estiver no carrinho. */
-export async function adicionarItem(usuarioId, codigoProduto, quantidade, db = obterBanco()) {
-  // Valida contra o ERP antes de gravar: nao faz sentido guardar codigo que
-  // nao existe e so descobrir isso no checkout.
+export async function adicionarItem(usuarioId, carrinhoId, codigoProduto, quantidade, db = obterBanco()) {
+  resolverDoUsuario(usuarioId, carrinhoId, db);
+
+  // Valida contra o ERP antes de gravar: nao faz sentido guardar codigo que nao
+  // existe e so descobrir isso no checkout.
   const produto = await erp.buscarProduto(codigoProduto);
 
   if (!produto) {
@@ -118,8 +142,8 @@ export async function adicionarItem(usuarioId, codigoProduto, quantidade, db = o
   }
 
   const existente = db
-    .prepare('SELECT * FROM carrinho_itens WHERE usuario_id = ? AND codigo_produto = ?')
-    .get(usuarioId, produto.codigo);
+    .prepare('SELECT * FROM carrinho_itens WHERE carrinho_id = ? AND codigo_produto = ?')
+    .get(carrinhoId, produto.codigo);
 
   const novaQuantidade = Math.min(MAXIMO_POR_ITEM, (existente?.quantidade ?? 0) + quantidade);
 
@@ -138,8 +162,8 @@ export async function adicionarItem(usuarioId, codigoProduto, quantidade, db = o
       .run(novaQuantidade, existente.id);
   } else {
     const total = db
-      .prepare('SELECT COUNT(*) AS total FROM carrinho_itens WHERE usuario_id = ?')
-      .get(usuarioId).total;
+      .prepare('SELECT COUNT(*) AS total FROM carrinho_itens WHERE carrinho_id = ?')
+      .get(carrinhoId).total;
 
     if (total >= MAXIMO_ITENS) {
       throw ApiError.conflito(
@@ -149,18 +173,21 @@ export async function adicionarItem(usuarioId, codigoProduto, quantidade, db = o
     }
 
     db.prepare(`
-      INSERT INTO carrinho_itens (usuario_id, codigo_produto, quantidade, adicionado_em)
+      INSERT INTO carrinho_itens (carrinho_id, codigo_produto, quantidade, adicionado_em)
       VALUES (?, ?, ?, ?)
-    `).run(usuarioId, produto.codigo, quantidade, agoraISO());
+    `).run(carrinhoId, produto.codigo, quantidade, agoraISO());
   }
 
-  return lerCarrinho(usuarioId, db);
+  tocarCarrinho(carrinhoId, db);
+  return lerCarrinho(usuarioId, carrinhoId, db);
 }
 
-export async function alterarQuantidade(usuarioId, codigoProduto, quantidade, db = obterBanco()) {
+export async function alterarQuantidade(usuarioId, carrinhoId, codigoProduto, quantidade, db = obterBanco()) {
+  resolverDoUsuario(usuarioId, carrinhoId, db);
+
   const existente = db
-    .prepare('SELECT * FROM carrinho_itens WHERE usuario_id = ? AND UPPER(codigo_produto) = ?')
-    .get(usuarioId, String(codigoProduto).toUpperCase());
+    .prepare('SELECT * FROM carrinho_itens WHERE carrinho_id = ? AND UPPER(codigo_produto) = ?')
+    .get(carrinhoId, String(codigoProduto).toUpperCase());
 
   if (!existente) {
     throw ApiError.naoEncontrado('Esse produto nao esta no seu carrinho.');
@@ -179,23 +206,30 @@ export async function alterarQuantidade(usuarioId, codigoProduto, quantidade, db
   db.prepare('UPDATE carrinho_itens SET quantidade = ? WHERE id = ?')
     .run(Math.min(MAXIMO_POR_ITEM, quantidade), existente.id);
 
-  return lerCarrinho(usuarioId, db);
+  tocarCarrinho(carrinhoId, db);
+  return lerCarrinho(usuarioId, carrinhoId, db);
 }
 
-export async function removerItem(usuarioId, codigoProduto, db = obterBanco()) {
+export async function removerItem(usuarioId, carrinhoId, codigoProduto, db = obterBanco()) {
+  resolverDoUsuario(usuarioId, carrinhoId, db);
+
   const resultado = db
-    .prepare('DELETE FROM carrinho_itens WHERE usuario_id = ? AND UPPER(codigo_produto) = ?')
-    .run(usuarioId, String(codigoProduto).toUpperCase());
+    .prepare('DELETE FROM carrinho_itens WHERE carrinho_id = ? AND UPPER(codigo_produto) = ?')
+    .run(carrinhoId, String(codigoProduto).toUpperCase());
 
   if (resultado.changes === 0) {
     throw ApiError.naoEncontrado('Esse produto nao esta no seu carrinho.');
   }
 
-  return lerCarrinho(usuarioId, db);
+  tocarCarrinho(carrinhoId, db);
+  return lerCarrinho(usuarioId, carrinhoId, db);
 }
 
-export function limparCarrinho(usuarioId, db = obterBanco()) {
-  db.prepare('DELETE FROM carrinho_itens WHERE usuario_id = ?').run(usuarioId);
+export async function limparItens(usuarioId, carrinhoId, db = obterBanco()) {
+  resolverDoUsuario(usuarioId, carrinhoId, db);
+  db.prepare('DELETE FROM carrinho_itens WHERE carrinho_id = ?').run(carrinhoId);
+  tocarCarrinho(carrinhoId, db);
+  return lerCarrinho(usuarioId, carrinhoId, db);
 }
 
 export { MAXIMO_ITENS, MAXIMO_POR_ITEM };

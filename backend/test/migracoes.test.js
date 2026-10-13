@@ -75,3 +75,58 @@ describe('rodarMigracoes', () => {
     expect(depois).toBe(antes);
   });
 });
+
+describe('001 - multiplos carrinhos', () => {
+  it('cria carrinhos e carrinho_itens ganha carrinho_id, sem usuario_id', () => {
+    const db = bancoNoBaseline();
+    rodarMigracoes(db);
+
+    expect(colunas(db, 'carrinhos')).toEqual(
+      expect.arrayContaining(['id', 'usuario_id', 'titulo', 'descricao', 'principal']),
+    );
+    expect(colunas(db, 'carrinho_itens')).toContain('carrinho_id');
+    expect(colunas(db, 'carrinho_itens')).not.toContain('usuario_id');
+  });
+
+  it('backfill: quem tinha itens ganha um "Carrinho 1" principal com os itens', () => {
+    const db = bancoNoBaseline();
+    db.prepare(`
+      INSERT INTO usuarios (id, nome, email, senha_hash, documento, criado_em, atualizado_em)
+      VALUES (7, 'Fulano', 'f@x.com', 'h', '123', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
+    `).run();
+    db.prepare(`
+      INSERT INTO carrinho_itens (usuario_id, codigo_produto, quantidade, adicionado_em)
+      VALUES (7, 'ARR-7001', 2, '2026-01-01T00:00:00.000Z'), (7, 'ARR-7003', 1, '2026-01-01T00:00:00.000Z')
+    `).run();
+
+    rodarMigracoes(db);
+
+    const carrinhos = db.prepare('SELECT * FROM carrinhos WHERE usuario_id = 7').all();
+    expect(carrinhos).toHaveLength(1);
+    expect(carrinhos[0].principal).toBe(1);
+    expect(carrinhos[0].titulo).toBe('Carrinho 1');
+
+    const itens = db
+      .prepare('SELECT codigo_produto, quantidade, carrinho_id FROM carrinho_itens ORDER BY codigo_produto')
+      .all();
+    expect(itens).toHaveLength(2);
+    expect(itens.every((item) => item.carrinho_id === carrinhos[0].id)).toBe(true);
+    expect(itens[0]).toMatchObject({ codigo_produto: 'ARR-7001', quantidade: 2 });
+  });
+
+  it('impede dois principais para o mesmo usuario (indice unico parcial)', () => {
+    const db = bancoNoBaseline();
+    db.prepare(`
+      INSERT INTO usuarios (id, nome, email, senha_hash, documento, criado_em, atualizado_em)
+      VALUES (8, 'Beltrano', 'b@x.com', 'h', '123', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
+    `).run();
+    rodarMigracoes(db);
+
+    const inserir = db.prepare(`
+      INSERT INTO carrinhos (usuario_id, titulo, principal, criado_em, atualizado_em)
+      VALUES (8, ?, 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
+    `);
+    inserir.run('A');
+    expect(() => inserir.run('B')).toThrow();
+  });
+});

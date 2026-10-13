@@ -26,11 +26,12 @@ rotasPedidos.post('/', async (req, res) => {
   const erros = new ColetorDeErros();
 
   const enderecoId = inteiroPositivo(corpo.endereco_id, 'endereco_id', erros, { max: 1e9 });
+  const carrinhoId = inteiroPositivo(corpo.carrinho_id, 'carrinho_id', erros, { max: 1e9 });
   const observacao = textoOpcional(corpo.observacao, 'observacao', erros, { max: 300 });
 
   erros.lancarSeInvalido('Nao foi possivel fechar o pedido.');
 
-  const pedido = await finalizarPedido(req.usuario, enderecoId, observacao);
+  const pedido = await finalizarPedido(req.usuario, enderecoId, observacao, carrinhoId);
 
   res.status(201).location(`/api/pedidos/${pedido.numero}`).json({ dados: pedido });
 });

@@ -3,7 +3,8 @@ import { ApiError } from '../lib/ApiError.js';
 import { paraCentavos, paraReais } from '../lib/dinheiro.js';
 import * as erp from '../erp/cliente.js';
 import { buscarEndereco, serializarEndereco } from './enderecoService.js';
-import { lerCarrinho, limparCarrinho } from './carrinhoService.js';
+import { lerCarrinho } from './carrinhoService.js';
+import { remover as removerCarrinho } from './carrinhosService.js';
 
 function enderecoEmUmaLinha(e) {
   const complemento = e.complemento ? `, ${e.complemento}` : '';
@@ -17,7 +18,7 @@ function enderecoEmUmaLinha(e) {
  * numero <-> usuario, porque o ERP conhece "Fulano, CPF X", nao "a conta
  * fulano@email.com". Sem esse vinculo nao daria para montar "meus pedidos".
  */
-export async function finalizarPedido(usuario, enderecoId, observacao, db = obterBanco()) {
+export async function finalizarPedido(usuario, enderecoId, observacao, carrinhoId, db = obterBanco()) {
   const enderecoLinha = buscarEndereco(usuario.id, enderecoId, db);
   if (!enderecoLinha) {
     throw ApiError.naoProcessavel('Nao foi possivel fechar o pedido.', [
@@ -25,7 +26,8 @@ export async function finalizarPedido(usuario, enderecoId, observacao, db = obte
     ]);
   }
 
-  const carrinho = await lerCarrinho(usuario.id, db);
+  // Resolve o carrinho por (id, usuario_id): carrinho de outro usuario vira 404.
+  const carrinho = await lerCarrinho(usuario.id, carrinhoId, db);
 
   if (carrinho.itens.length === 0) {
     throw ApiError.conflito('CARRINHO_VAZIO', 'Seu carrinho esta vazio.');
@@ -78,7 +80,10 @@ export async function finalizarPedido(usuario, enderecoId, observacao, db = obte
         agoraISO(),
       );
 
-      limparCarrinho(usuario.id, db);
+      // Fechar um carrinho = cria o pedido e remove aquele carrinho, reusando a
+      // regra de apagar (promove o principal mais recente, ou cai no estado
+      // vazio se era o unico). Os outros carrinhos ficam intactos.
+      removerCarrinho(usuario.id, carrinhoId, db);
     })();
   } catch (erro) {
     console.error(
